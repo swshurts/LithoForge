@@ -117,23 +117,39 @@ def simulate_stack(
 # Layer allocation heuristic
 # ---------------------------------------------------------------------------
 
+def _filament_chroma(filaments: List[Filament]) -> np.ndarray:
+    """Per-filament Lab chroma (sqrt(a^2 + b^2)). W and K ≈ 0, saturated
+    primaries 50+."""
+    fil_rgb = np.array([f.rgb for f in filaments])
+    fil_lab = skcolor.rgb2lab(fil_rgb.reshape(-1, 1, 3)).reshape(-1, 3)
+    return np.sqrt(fil_lab[:, 1] ** 2 + fil_lab[:, 2] ** 2)
+
+
 def allocate_layers(
     image_rgb: np.ndarray,
     filaments: List[Filament],
     total_layers: int,
     min_per_color: int = 1,
 ) -> List[int]:
-    """Heuristically distribute `total_layers` across the provided filaments.
+    """Distribute `total_layers` across the provided filaments with a
+    chroma-aware strategy.
 
-    We look at how much of the image is "served" best by each filament
-    (nearest filament colour in Lab) and allocate proportionally, ensuring
-    each filament gets at least `min_per_color` layers.
+    Neutral filaments (White, Key, Grey, etc.) only need a handful of layers
+    to perform their luminance role — extra thickness there just wastes
+    budget. Chromatic filaments need more layers to accumulate visible
+    colour density. We therefore:
+
+    1. Cap W / K / very-low-chroma filaments at a small fixed budget
+       (scaled with total thickness so very tall prints still leave room).
+    2. Split the remaining layer budget among the chromatic filaments,
+       weighted by how much each is actually "useful" for the image
+       (histogram of nearest-filament match) boosted by its chroma so
+       primaries aren't starved when the image has muted midtones.
     """
     n = len(filaments)
     if n == 0:
         return []
     if n * min_per_color >= total_layers:
-        # Not enough room, distribute evenly.
         base = total_layers // n
         rem = total_layers - base * n
         alloc = [base] * n
@@ -141,33 +157,84 @@ def allocate_layers(
             alloc[i] += 1
         return alloc
 
+    chroma = _filament_chroma(filaments)
+    # Anything below this chroma (W, K, Grey, very muted) is treated as
+    # neutral and capped.
+    neutral_mask = chroma < 18.0
+
+    # Neutral cap scales with total thickness: at 25 layers cap at 3 each,
+    # at 50 layers cap at 5. Always at least `min_per_color`.
+    neutral_cap = max(min_per_color, min(3 + total_layers // 25, total_layers // 3))
+
     # Nearest-filament histogram in Lab.
     img_lab = skcolor.rgb2lab(image_rgb.reshape(-1, 1, 3)).reshape(-1, 3)
     fil_rgb = np.array([f.rgb for f in filaments])
     fil_lab = skcolor.rgb2lab(fil_rgb.reshape(-1, 1, 3)).reshape(-1, 3)
-
-    # sample for speed
     sample = img_lab[:: max(1, len(img_lab) // 20000)]
     d = np.linalg.norm(sample[:, None, :] - fil_lab[None, :, :], axis=-1)
     nearest = np.argmin(d, axis=1)
     counts = np.bincount(nearest, minlength=n).astype(np.float64)
 
-    # Ensure at least some presence for visual thickness (especially W/K base).
-    counts = counts + counts.sum() * 0.05
+    # Chroma boost: boost chromatic filaments' share so primaries don't
+    # get starved when the image is mostly midtones.
+    chroma_weight = 1.0 + chroma / 40.0
+    weighted = counts * chroma_weight + counts.sum() * 0.03
 
-    remaining = total_layers - n * min_per_color
-    raw = counts / counts.sum() * remaining
-    alloc = [min_per_color + int(math.floor(x)) for x in raw]
+    alloc = [min_per_color] * n
+    remaining = total_layers - sum(alloc)
 
-    # distribute rounding errors
-    deficit = total_layers - sum(alloc)
-    fracs = [x - math.floor(x) for x in raw]
-    order = np.argsort(fracs)[::-1]
-    i = 0
-    while deficit > 0:
-        alloc[order[i % n]] += 1
-        deficit -= 1
-        i += 1
+    # Phase 1: give neutral filaments at most (neutral_cap - min_per_color)
+    # extra layers based on their histogram presence.
+    for i in range(n):
+        if neutral_mask[i] and remaining > 0:
+            extra = min(
+                neutral_cap - min_per_color,
+                max(0, int(round(weighted[i] / max(1e-9, weighted.sum())
+                                 * total_layers))),
+            )
+            extra = min(extra, remaining)
+            alloc[i] += extra
+            remaining -= extra
+
+    # Phase 2: distribute all remaining layers across chromatic filaments.
+    chromatic_idx = [i for i in range(n) if not neutral_mask[i]]
+    if chromatic_idx and remaining > 0:
+        w = weighted[chromatic_idx]
+        if w.sum() <= 0:
+            # No histogram info — even split.
+            per = remaining // len(chromatic_idx)
+            for i in chromatic_idx:
+                alloc[i] += per
+                remaining -= per
+            for i in chromatic_idx:
+                if remaining <= 0:
+                    break
+                alloc[i] += 1
+                remaining -= 1
+        else:
+            raw = w / w.sum() * remaining
+            floors = np.floor(raw).astype(int)
+            for idx, i in enumerate(chromatic_idx):
+                alloc[i] += int(floors[idx])
+            remaining = total_layers - sum(alloc)
+            # distribute fractional leftovers greedily
+            fracs = raw - floors
+            order = np.argsort(-fracs)
+            for k in range(len(chromatic_idx)):
+                if remaining <= 0:
+                    break
+                alloc[chromatic_idx[order[k % len(chromatic_idx)]]] += 1
+                remaining -= 1
+
+    # Phase 3: anything still left (e.g. no chromatic filaments) goes to
+    # whichever filament has the highest fractional demand.
+    if remaining > 0:
+        order = np.argsort(-weighted)
+        i = 0
+        while remaining > 0:
+            alloc[int(order[i % n])] += 1
+            remaining -= 1
+            i += 1
     return alloc
 
 

@@ -1,10 +1,18 @@
 """Photography-oriented filament library + palette suggestion.
 
-Given an image, suggest a 6-filament palette that covers its colour
-distribution well. The selection always includes White and Key (luminance
-endpoints) and uses greedy forward selection in Lab space to pick 4
-additional chromatic filaments that minimise the mean nearest-neighbour ΔE
-from image pixels to palette."""
+Given an image, suggest a 6-filament palette that actually expands the
+reachable gamut for the picture. The selector always seeds with White and
+Key (luminance endpoints) and then picks chromatic filaments using a
+combined score that rewards:
+
+* how many image pixels become better-matched (ΔE_mean reduction), and
+* how *saturated* the filament is (Lab chroma) so primaries get real
+  consideration even when a photo is dominated by muted midtones.
+
+It also caps neutral library entries (W, K, Grey, Brown …) at 3 of the 6
+slots so you always end up with at least 3 chromatic filaments extending
+the gamut.
+"""
 
 from __future__ import annotations
 
@@ -17,10 +25,6 @@ from skimage import color as skcolor
 from lithophane import Filament
 
 
-# Curated filament library — tuned for photography subjects. Each entry has a
-# representative hex and an estimated transmission distance in mm (higher =
-# more translucent). TD values are coarse approximations of common PLA
-# offerings; users can fine-tune them after the palette is suggested.
 FILAMENT_LIBRARY: List[Filament] = [
     Filament("White",      "#f5f5f5", td=4.5),
     Filament("Cream",      "#f2e7c3", td=4.0),
@@ -42,10 +46,12 @@ FILAMENT_LIBRARY: List[Filament] = [
 ]
 
 
+# Filaments considered "neutral" for palette-balance purposes (low chroma).
+_NEUTRAL_NAMES = {"White", "Cream", "Grey", "Brown", "Key"}
+
+
 def _sample_image_lab(image: Image.Image, max_samples: int = 4096) -> np.ndarray:
-    """Return a (N, 3) Lab sample of the image."""
     img = image.convert("RGB")
-    # Reduce size first for speed.
     img.thumbnail((256, 256))
     arr = np.asarray(img, dtype=np.float64) / 255.0
     lab = skcolor.rgb2lab(arr).reshape(-1, 3)
@@ -60,23 +66,22 @@ def _filaments_to_lab(filaments: List[Filament]) -> np.ndarray:
     return skcolor.rgb2lab(rgb.reshape(-1, 1, 3)).reshape(-1, 3)
 
 
+def _chroma(lab: np.ndarray) -> np.ndarray:
+    return np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2)
+
+
 def suggest_palette(
     image: Image.Image,
     palette_size: int = 6,
     include_white: bool = True,
     include_key: bool = True,
+    max_neutral_slots: int = 3,
 ) -> List[Filament]:
-    """Greedy forward-selection of filaments from FILAMENT_LIBRARY.
-
-    Always seeds with White and Key when requested; adds further filaments
-    that most reduce the mean nearest-neighbour ΔE from image pixels to the
-    current palette. Returns the selected filaments ordered bottom→top by
-    luminance descending (W first, K last) which tends to give the brightest
-    highlights and cleanest colour transitions when used as a print stack.
-    """
+    """Greedy forward-selection with chroma bonus + neutral cap."""
     sample_lab = _sample_image_lab(image)
     library = list(FILAMENT_LIBRARY)
     library_lab = _filaments_to_lab(library)
+    library_chroma = _chroma(library_lab)
     name_idx = {f.name: i for i, f in enumerate(library)}
 
     selected: List[int] = []
@@ -85,7 +90,6 @@ def suggest_palette(
     if include_key:
         selected.append(name_idx["Key"])
 
-    # nearest_d[i] = current minimum ΔE of sample i to selected palette
     if selected:
         d = np.linalg.norm(
             sample_lab[:, None, :] - library_lab[selected][None, :, :], axis=-1
@@ -94,19 +98,35 @@ def suggest_palette(
     else:
         nearest_d = np.full(sample_lab.shape[0], 1e9)
 
+    # Chroma weight: saturated filaments get a meaningful bonus so that the
+    # greedy step can pick them over a slightly-better-in-mean-ΔE neutral.
+    # Calibrated so a chroma-70 primary gets ~3 ΔE of free credit.
+    chroma_bonus = library_chroma * 0.05
+
+    def neutral_count(sel: List[int]) -> int:
+        return sum(1 for i in sel if library[i].name in _NEUTRAL_NAMES)
+
     while len(selected) < palette_size:
-        # For each candidate, what would the new mean-ΔE be if we added it?
-        best_gain = -1.0
+        best_score = -1e9
         best_idx = -1
+        current_neutrals = neutral_count(selected)
+
         for cand in range(len(library)):
             if cand in selected:
                 continue
+            is_neutral = library[cand].name in _NEUTRAL_NAMES
+            if is_neutral and current_neutrals >= max_neutral_slots:
+                continue
+
             cand_d = np.linalg.norm(sample_lab - library_lab[cand], axis=-1)
             merged = np.minimum(nearest_d, cand_d)
-            gain = nearest_d.mean() - merged.mean()
-            if gain > best_gain:
-                best_gain = gain
+            delta_e_gain = nearest_d.mean() - merged.mean()
+
+            score = delta_e_gain + chroma_bonus[cand]
+            if score > best_score:
+                best_score = score
                 best_idx = cand
+
         if best_idx == -1:
             break
         selected.append(best_idx)
@@ -115,13 +135,16 @@ def suggest_palette(
 
     chosen = [library[i] for i in selected]
 
-    # Order bottom→top: White first, Key last, chromatic by descending L*.
+    # Order bottom→top: White first, Key last, chromatic ordered by a mix of
+    # descending L* so warm highlights come first after W and deeper cools
+    # sit nearer K.
     w = next((f for f in chosen if f.name == "White"), None)
     k = next((f for f in chosen if f.name == "Key"), None)
     middle = [f for f in chosen if f.name not in {"White", "Key"}]
-    middle_lab = _filaments_to_lab(middle) if middle else np.zeros((0, 3))
-    order = sorted(range(len(middle)), key=lambda i: -middle_lab[i, 0])
-    middle = [middle[i] for i in order]
+    if middle:
+        mid_lab = _filaments_to_lab(middle)
+        order = sorted(range(len(middle)), key=lambda i: -mid_lab[i, 0])
+        middle = [middle[i] for i in order]
 
     result: List[Filament] = []
     if w is not None:
