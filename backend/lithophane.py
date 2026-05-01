@@ -54,15 +54,17 @@ class Filament:
         )
 
 
-# Printing order: bottom of the print (first layer, closest to build plate
-# — furthest from viewer looking at the back-lit lithophane) to top. We use
-# the classic Hueforge ordering: K → C → M → Y → W (W on top/front).
+# Printing order: bottom of the print (first layer, closest to the build
+# plate — the side facing the back-light) to top (the side facing the
+# viewer). Hueforge-style CMYKW lithophanes put W at the base so thin
+# regions stay bright, then Y → M → C add colour, and K caps only the
+# thickest, darkest regions.
 DEFAULT_FILAMENTS: List[Filament] = [
-    Filament("Key",     "#111111", td=0.6),
-    Filament("Cyan",    "#06b6d4", td=3.0),
-    Filament("Magenta", "#ec4899", td=3.0),
-    Filament("Yellow",  "#eab308", td=3.5),
     Filament("White",   "#f5f5f5", td=4.5),
+    Filament("Yellow",  "#eab308", td=3.5),
+    Filament("Magenta", "#ec4899", td=3.0),
+    Filament("Cyan",    "#06b6d4", td=3.0),
+    Filament("Key",     "#111111", td=1.2),
 ]
 
 
@@ -71,16 +73,17 @@ DEFAULT_FILAMENTS: List[Filament] = [
 # ---------------------------------------------------------------------------
 
 def _beer_lambert_transmission(filament: Filament, thickness_mm: float) -> np.ndarray:
-    """Return RGB transmittance (0..1) for a slab of `thickness_mm` of the
-    filament. Darker filaments absorb more so effective TD is scaled by
-    perceived luminance of the filament colour."""
-    # Per-channel absorption derives from the filament's own RGB: dark
-    # channels absorb more. We combine that with the transmission distance.
-    rgb = filament.rgb
-    # Effective per-channel TD: scale by (rgb + 0.05) so black absorbs fast.
-    per_channel_td = filament.td * (rgb + 0.05) / 1.05
-    per_channel_td = np.clip(per_channel_td, 0.02, None)
-    return np.exp(-thickness_mm / per_channel_td)
+    """Per-channel RGB transmittance (0..1) through `thickness_mm` of filament.
+
+    Uses the standard photographic-filament approximation
+        T_channel(t) = rgb_channel ** (t / TD)
+    where TD is the transmission distance in mm at which the filament reaches
+    its characteristic colour. This naturally reproduces subtractive colour
+    mixing (cyan attenuates R, magenta attenuates G, yellow attenuates B) and
+    keeps each channel independent."""
+    rgb = np.clip(filament.rgb, 0.01, 1.0)  # avoid log(0)
+    td = max(filament.td, 0.05)
+    return rgb ** (thickness_mm / td)
 
 
 def simulate_stack(
@@ -184,6 +187,65 @@ class OptimizeResult:
     swap_colors: List[str]         # hex of the colour active *above* the swap
 
 
+def _evaluate_order(
+    arr: np.ndarray,
+    target_lab: np.ndarray,
+    order: List[Filament],
+    total_layers: int,
+    layer_height_mm: float,
+) -> Tuple[float, np.ndarray, np.ndarray, List[int], np.ndarray]:
+    """Build LUT for `order` and match every pixel. Returns
+    (mean_delta_e, layer_map_flat, min_d_flat, allocation, lut_clipped)."""
+    allocation = allocate_layers(arr, order, total_layers)
+    lut = simulate_stack(allocation, order, layer_height_mm)
+    lut_clipped = np.clip(lut, 0.0, 1.0)
+    lut_lab = skcolor.rgb2lab(lut_clipped.reshape(-1, 1, 3)).reshape(-1, 3)
+
+    flat = target_lab.reshape(-1, 3)
+    chunk = 16384
+    layer_map_flat = np.empty(flat.shape[0], dtype=np.int32)
+    min_d_flat = np.empty(flat.shape[0], dtype=np.float64)
+    for start in range(0, flat.shape[0], chunk):
+        end = min(start + chunk, flat.shape[0])
+        d = np.linalg.norm(
+            flat[start:end, None, :] - lut_lab[None, :, :], axis=-1
+        )
+        idx = np.argmin(d, axis=1)
+        layer_map_flat[start:end] = idx
+        min_d_flat[start:end] = d[np.arange(end - start), idx]
+    return float(min_d_flat.mean()), layer_map_flat, min_d_flat, allocation, lut_clipped
+
+
+# Orderings of the CMYKW palette to try. Bottom ↦ Top. Thin regions show the
+# *first* entry (closest to the back-light), so we always start with W or K
+# to bracket the luminance extremes. Between them we permute C/M/Y to cover
+# the common gamut paths.
+_CANDIDATE_ORDERS = [
+    ("White",   "Yellow",  "Magenta", "Cyan",    "Key"),
+    ("White",   "Yellow",  "Cyan",    "Magenta", "Key"),
+    ("White",   "Cyan",    "Magenta", "Yellow",  "Key"),
+    ("White",   "Magenta", "Yellow",  "Cyan",    "Key"),
+    ("White",   "Cyan",    "Yellow",  "Magenta", "Key"),
+    ("Key",     "Cyan",    "Magenta", "Yellow",  "White"),
+]
+
+
+def _reorder_by_names(filaments: List[Filament], names: Tuple[str, ...]) -> List[Filament]:
+    """Return filaments reordered by `names` tuple. Filaments not matched by
+    name are preserved in the order they appear."""
+    by_name = {f.name: f for f in filaments}
+    ordered: List[Filament] = []
+    used = set()
+    for n in names:
+        if n in by_name:
+            ordered.append(by_name[n])
+            used.add(n)
+    for f in filaments:
+        if f.name not in used:
+            ordered.append(f)
+    return ordered
+
+
 def optimize(
     image: Image.Image,
     filaments: List[Filament],
@@ -192,7 +254,11 @@ def optimize(
     max_swaps: int,
     max_dimension_px: int = 512,
 ) -> OptimizeResult:
-    """Run the full CMYKW lithophane optimization."""
+    """Run the full CMYKW lithophane optimization.
+
+    Tries several physically-plausible stack orderings and keeps the one with
+    the smallest mean ΔE. For custom palettes (filaments whose names don't
+    match CMYKW) only the user-supplied order is evaluated."""
 
     # Down-sample for speed while preserving aspect.
     img = image.convert("RGB")
@@ -203,36 +269,34 @@ def optimize(
             (max(1, int(w / scale)), max(1, int(h / scale))), Image.LANCZOS
         )
     arr = np.asarray(img, dtype=np.float64) / 255.0  # (H, W, 3)
+    target_lab = skcolor.rgb2lab(arr)
 
     # Constrain filaments to max_swaps+1.
     n_filaments = min(len(filaments), max_swaps + 1)
-    used_filaments = filaments[:n_filaments]
-
+    base_palette = filaments[:n_filaments]
     total_layers = max(1, int(round(total_thickness_mm / layer_height_mm)))
-    allocation = allocate_layers(arr, used_filaments, total_layers)
 
-    lut = simulate_stack(allocation, used_filaments, layer_height_mm)
-    lut_clipped = np.clip(lut, 0.0, 1.0)
+    # Build candidate orderings. Always include the user-supplied order.
+    known_names = {"White", "Yellow", "Magenta", "Cyan", "Key"}
+    names_in_palette = {f.name for f in base_palette}
+    candidates: List[List[Filament]] = [list(base_palette)]
+    if names_in_palette.issubset(known_names) and len(base_palette) >= 2:
+        for order_names in _CANDIDATE_ORDERS:
+            cand = _reorder_by_names(
+                base_palette, tuple(n for n in order_names if n in names_in_palette)
+            )
+            if len(cand) == len(base_palette) and cand != candidates[0]:
+                candidates.append(cand)
 
-    # Convert to Lab once.
-    target_lab = skcolor.rgb2lab(arr)                                  # (H, W, 3)
-    lut_lab = skcolor.rgb2lab(lut_clipped.reshape(-1, 1, 3)).reshape(-1, 3)
+    best = None  # (mean_de, order, layer_map_flat, min_d_flat, allocation, lut)
+    for order in candidates:
+        mean_de, lm_flat, min_d, alloc, lut_clipped = _evaluate_order(
+            arr, target_lab, order, total_layers, layer_height_mm
+        )
+        if best is None or mean_de < best[0]:
+            best = (mean_de, order, lm_flat, min_d, alloc, lut_clipped)
 
-    # Pixel-wise nearest LUT entry in Lab (ΔE76 = euclidean in Lab).
-    flat = target_lab.reshape(-1, 3)                                   # (N, 3)
-    # Compute distances in chunks to bound memory.
-    chunk = 16384
-    layer_map_flat = np.empty(flat.shape[0], dtype=np.int32)
-    min_d_flat = np.empty(flat.shape[0], dtype=np.float64)
-    for start in range(0, flat.shape[0], chunk):
-        end = min(start + chunk, flat.shape[0])
-        d = np.linalg.norm(
-            flat[start:end, None, :] - lut_lab[None, :, :], axis=-1
-        )  # (chunk, L+1)
-        idx = np.argmin(d, axis=1)
-        layer_map_flat[start:end] = idx
-        min_d_flat[start:end] = d[np.arange(end - start), idx]
-
+    _, used_filaments, layer_map_flat, min_d_flat, allocation, lut_clipped = best
     layer_map = layer_map_flat.reshape(arr.shape[:2]).astype(np.int32)
     rendered = lut_clipped[layer_map_flat].reshape(arr.shape)
 

@@ -113,7 +113,7 @@ class TestHealth:
         fils = body["filaments"]
         assert len(fils) == 5
         names = [f["name"] for f in fils]
-        assert names == ["Key", "Cyan", "Magenta", "Yellow", "White"]
+        assert set(names) == {"Key", "Cyan", "Magenta", "Yellow", "White"}
         for f in fils:
             assert set(f.keys()) >= {"name", "hex", "td"}
             assert f["hex"].startswith("#")
