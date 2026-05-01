@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Input } from "./ui/input";
+import { ModeToggle } from "./ModeToggle";
 
 const Row = ({ label, value, unit, children, testid }) => (
   <div className="space-y-2" data-testid={testid}>
@@ -27,12 +28,31 @@ const Row = ({ label, value, unit, children, testid }) => (
 
 export const ConfigPanel = ({ config, setConfig, disabled }) => {
   const update = (key, v) => setConfig((c) => ({ ...c, [key]: v }));
+  const isPainting = config.render_mode === "painting";
 
   return (
     <div
       className="h-full overflow-y-auto p-5 space-y-6"
       data-testid="config-panel"
     >
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3">
+          Render mode
+        </div>
+        <ModeToggle
+          mode={config.render_mode}
+          setMode={(m) => update("render_mode", m)}
+          disabled={disabled}
+        />
+        <div className="font-mono text-[9px] text-zinc-600 leading-relaxed mt-2">
+          {isPainting
+            ? "Each pixel shows one filament's pure colour — no back-light needed. Dark filaments print at the bottom, light on top."
+            : "Colour comes from light transmitted through the stack. Needs a back-light. Full CMYKW subtractive mixing."}
+        </div>
+      </div>
+
+      <div className="border-t border-zinc-800" />
+
       <div>
         <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3">
           Geometry
@@ -218,6 +238,28 @@ export const ConfigPanel = ({ config, setConfig, disabled }) => {
               {config.max_swaps === 1 ? "" : "s"}
             </div>
           </Row>
+
+          {isPainting && (
+            <Row
+              label="Relief"
+              value={`${Math.round(config.relief * 100)}%`}
+              unit=""
+              testid="row-relief"
+            >
+              <Slider
+                data-testid="relief-slider"
+                value={[config.relief]}
+                onValueChange={([v]) => update("relief", v)}
+                min={0}
+                max={1}
+                step={0.05}
+                disabled={disabled}
+              />
+              <div className="font-mono text-[10px] text-zinc-600 mt-1">
+                0% = flat plateaus · 100% = luminance-driven bas-relief
+              </div>
+            </Row>
+          )}
 
           <div className="grid grid-cols-2 gap-3 pt-1">
             <div className="panel-muted p-3">

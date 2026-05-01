@@ -39,6 +39,7 @@ export const Viewport = ({
   loading,
   progressLabel,
   onReset,
+  renderMode,
 }) => {
   const [view, setView] = useState("preview");
 
@@ -113,7 +114,9 @@ export const Viewport = ({
           />
           {view === "preview" && result && (
             <div className="absolute top-2 left-2 font-mono text-[9px] tracking-[0.2em] text-zinc-300 bg-black/60 px-2 py-0.5 border border-white/10">
-              SIMULATED BACKLIT OUTPUT
+              {renderMode === "painting"
+                ? "PAINT PREVIEW · NEAREST-FILAMENT MAPPING"
+                : "SIMULATED BACKLIT OUTPUT"}
             </div>
           )}
           {view === "heightmap" && (

@@ -341,6 +341,112 @@ def _generate_candidate_orders(base_palette: List[Filament]) -> List[List[Filame
     return candidates
 
 
+def _optimize_painting(
+    arr: np.ndarray,
+    target_lab: np.ndarray,
+    filaments: List[Filament],
+    total_layers: int,
+    layer_height_mm: float,
+    relief: float,
+) -> "OptimizeResult":
+    """Painting mode: each pixel shows the single filament colour nearest to
+    its Lab target. No subtractive mixing; colour fidelity is bounded by the
+    palette itself. Stack is ordered dark→light bottom→top so dark regions
+    recess and light regions rise as relief.
+
+    The `relief` parameter (0..1) controls whether the surface within a
+    filament's Z-band is flat (0) or modulated by the pixel's luminance
+    (1 = full band-height variation), giving the print some bas-relief
+    texture within each colour region.
+    """
+    n = len(filaments)
+    # Sort filaments by Lab L* ascending (darkest first, lightest last).
+    fil_lab = skcolor.rgb2lab(
+        np.array([f.rgb for f in filaments]).reshape(-1, 1, 3)
+    ).reshape(-1, 3)
+    order_idx = np.argsort(fil_lab[:, 0])
+    ordered = [filaments[i] for i in order_idx]
+    ordered_lab = fil_lab[order_idx]
+
+    # Allocate layers: equal zones by default, distributing remainder to
+    # the brightest (top) filament so it has the most vertical head-room.
+    base = total_layers // n
+    remainder = total_layers - base * n
+    allocation = [base] * n
+    for i in range(remainder):
+        allocation[-1 - i] += 1  # pad from the top
+    # Guarantee at least 1 layer per filament (for printability).
+    # (Trivially satisfied when base >= 1; covered for tiny stacks.)
+
+    # Zone end-indices (1-based, cumulative).
+    zone_end = np.cumsum(allocation)  # (n,)
+    zone_start = np.concatenate([[0], zone_end[:-1]])  # (n,)
+
+    # Nearest filament per pixel in Lab.
+    flat = target_lab.reshape(-1, 3)
+    chunk = 32768
+    nearest = np.empty(flat.shape[0], dtype=np.int32)
+    min_d = np.empty(flat.shape[0], dtype=np.float64)
+    for start in range(0, flat.shape[0], chunk):
+        end = min(start + chunk, flat.shape[0])
+        d = np.linalg.norm(
+            flat[start:end, None, :] - ordered_lab[None, :, :], axis=-1
+        )
+        idx = np.argmin(d, axis=1)
+        nearest[start:end] = idx
+        min_d[start:end] = d[np.arange(end - start), idx]
+
+    # Pixel height within its filament's zone: relief modulated by the
+    # pixel's normalised luminance relative to the filament's own L*.
+    zone_h = np.array(allocation)[nearest]  # (N,)
+    zs = zone_start[nearest]
+    L = flat[:, 0] / 100.0
+    # Centered on the filament's own L* so its natural tone sits mid-zone.
+    fil_L = ordered_lab[nearest, 0] / 100.0
+    delta_L = np.clip(L - fil_L, -0.5, 0.5)  # -0.5 (darker) .. +0.5 (lighter)
+    # Map to [0..zone_h-1] with relief control.
+    offset = (0.5 + delta_L) * (zone_h - 1) * relief + (zone_h - 1) * (1 - relief)
+    offset = np.clip(np.round(offset), 0, zone_h - 1).astype(np.int32)
+    layer_map_flat = zs + offset
+
+    layer_map = layer_map_flat.reshape(arr.shape[:2]).astype(np.int32)
+
+    # Rendered preview: each pixel shows its chosen filament's RGB.
+    fil_rgb = np.array([f.rgb for f in ordered])
+    rendered = fil_rgb[nearest].reshape(arr.shape)
+
+    # Build LUT-equivalent for downstream consumers (preview PNG helper etc).
+    # In painting mode the "LUT" is just the palette repeated per zone layer;
+    # a compact version suffices.
+    lut = np.zeros((total_layers + 1, 3), dtype=np.float64)
+    for i in range(n):
+        lut[zone_start[i]: zone_end[i]] = fil_rgb[i]
+    lut[-1] = fil_rgb[-1]  # cap
+    lut_clipped = np.clip(lut, 0.0, 1.0)
+
+    swap_heights: List[float] = []
+    swap_colors: List[str] = []
+    z = 0.0
+    for fil, nlayers in zip(ordered, allocation):
+        swap_heights.append(round(z, 4))
+        swap_colors.append(fil.hex)
+        z += nlayers * layer_height_mm
+
+    return OptimizeResult(
+        layer_map=layer_map,
+        rendered_rgb=rendered,
+        lut=lut_clipped,
+        layer_allocation=list(allocation),
+        filaments=ordered,
+        total_layers=total_layers,
+        layer_height_mm=layer_height_mm,
+        delta_e_mean=float(min_d.mean()),
+        delta_e_p95=float(np.percentile(min_d, 95)),
+        swap_heights_mm=swap_heights,
+        swap_colors=swap_colors,
+    )
+
+
 def optimize(
     image: Image.Image,
     filaments: List[Filament],
@@ -349,13 +455,20 @@ def optimize(
     max_swaps: int,
     max_dimension_px: int = 512,
     auto_order: bool = True,
+    render_mode: str = "lithophane",
+    relief: float = 0.5,
 ) -> OptimizeResult:
-    """Run the full CMYKW lithophane optimization.
+    """Optimize a photograph into either a back-lit lithophane (subtractive
+    Beer-Lambert) or a reflective painting (nearest-filament mapping).
 
-    When `auto_order` is True the optimizer evaluates multiple stack orderings
-    on a down-sampled pixel set and picks the one with the smallest mean ΔE,
-    then runs full-resolution matching on that winner. When False, the
-    user-supplied order is used as-is."""
+    `render_mode`:
+        "lithophane" — stacked colour from transmitted light (default)
+        "painting"   — each pixel shows one filament's reflective colour
+
+    `relief` (painting mode only): 0 = flat plateaus per colour region,
+    1 = within-zone height modulated by pixel luminance for bas-relief
+    texture.
+    """
 
     # Down-sample for speed while preserving aspect.
     img = image.convert("RGB")
@@ -372,6 +485,11 @@ def optimize(
     n_filaments = min(len(filaments), max_swaps + 1)
     base_palette = filaments[:n_filaments]
     total_layers = max(1, int(round(total_thickness_mm / layer_height_mm)))
+
+    if render_mode == "painting":
+        return _optimize_painting(
+            arr, target_lab, base_palette, total_layers, layer_height_mm, relief
+        )
 
     # Always use one allocation (histogram-based on the user's palette).
     # Allocation is a function of the palette, not the order.

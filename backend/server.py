@@ -83,6 +83,8 @@ class OptimizeIn(BaseModel):
     curve_radius_mm: float = 80.0
     filaments: Optional[List[FilamentIn]] = None
     auto_order: bool = True
+    render_mode: str = "lithophane"  # "lithophane" | "painting"
+    relief: float = 0.5              # painting mode only, 0..1
 
 
 class OptimizeOut(BaseModel):
@@ -204,6 +206,8 @@ async def optimize_endpoint(body: OptimizeIn):
         max_swaps=body.max_swaps,
         max_dimension_px=512,
         auto_order=body.auto_order,
+        render_mode=body.render_mode,
+        relief=body.relief,
     )
 
     preview = base64.b64encode(rendered_to_png_bytes(result.rendered_rgb)).decode()

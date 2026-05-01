@@ -17,6 +17,8 @@ const DEFAULT_CONFIG = {
   max_swaps: 5,
   geometry: "flat",
   curve_radius_mm: 80,
+  render_mode: "painting",
+  relief: 0.5,
 };
 
 export default function App() {
@@ -146,6 +148,7 @@ export default function App() {
             loading={loading || uploading}
             progressLabel={uploading ? "Uploading…" : progressLabel}
             onReset={handleReset}
+            renderMode={config.render_mode}
           />
         </main>
 
