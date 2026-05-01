@@ -11,7 +11,7 @@ import { getDefaultFilaments, optimize, suggestPalette, uploadImage } from "@/li
 const DEFAULT_CONFIG = {
   width_mm: 100,
   height_mm: 100,
-  thickness_mm: 3.0,
+  thickness_mm: 3.6,
   border_mm: 2,
   layer_height_mm: 0.12,
   max_swaps: 5,

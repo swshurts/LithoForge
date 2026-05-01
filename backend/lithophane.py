@@ -62,12 +62,12 @@ class Filament:
 # muddying. W sits at the base so thin regions stay bright, K caps the
 # thickest shadows.
 DEFAULT_FILAMENTS: List[Filament] = [
-    Filament("White",   "#f5f5f5", td=4.5),
-    Filament("Yellow",  "#eab308", td=3.5),
-    Filament("Magenta", "#ec4899", td=3.0),
-    Filament("Green",   "#2ea043", td=3.0),
-    Filament("Blue",    "#1e45a8", td=2.0),
-    Filament("Key",     "#111111", td=1.2),
+    Filament("White",   "#f5f5f5", td=5.0),
+    Filament("Yellow",  "#eab308", td=1.8),
+    Filament("Magenta", "#ec4899", td=1.5),
+    Filament("Green",   "#2ea043", td=1.5),
+    Filament("Blue",    "#1e45a8", td=1.3),
+    Filament("Key",     "#111111", td=0.8),
 ]
 
 
@@ -296,13 +296,18 @@ def _fast_mean_delta_e(
     layer_height_mm: float,
     allocation: List[int],
 ) -> float:
-    """Cheap ΔE estimate for a candidate ordering over a pre-sampled pixel
-    set. Used to rank orderings without paying for full-resolution matching."""
+    """Fast order-ranking score combining mean and worst-case ΔE.
+
+    Using pure mean favours muddy orderings that trade saturation for
+    average fit; adding a p90 term pushes the search toward orderings that
+    can *reach* the saturated endpoints of the image.
+    """
     lut = simulate_stack(allocation, order, layer_height_mm)
     lut_clipped = np.clip(lut, 0.0, 1.0)
     lut_lab = skcolor.rgb2lab(lut_clipped.reshape(-1, 1, 3)).reshape(-1, 3)
     d = np.linalg.norm(sample_lab[:, None, :] - lut_lab[None, :, :], axis=-1)
-    return float(d.min(axis=1).mean())
+    per_pixel = d.min(axis=1)
+    return float(0.7 * per_pixel.mean() + 0.3 * np.percentile(per_pixel, 90))
 
 
 _LUMINANCE_ENDPOINT_NAMES = {"White", "Key"}
