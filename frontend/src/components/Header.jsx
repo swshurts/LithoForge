@@ -21,7 +21,7 @@ export const Header = ({ onGenerate, canGenerate, generating }) => {
               LITHOFORGE
             </div>
             <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-zinc-500 leading-none mt-0.5">
-              CMYKW · Beer-Lambert
+              Photo · Beer-Lambert
             </div>
           </div>
         </div>

@@ -26,6 +26,7 @@ from lithophane import (
     optimize,
     rendered_to_png_bytes,
 )
+from palette_suggest import FILAMENT_LIBRARY, suggest_palette
 
 
 ROOT_DIR = Path(__file__).parent
@@ -144,6 +145,32 @@ async def root():
 async def default_filaments():
     return {"filaments": [{"name": f.name, "hex": f.hex, "td": f.td}
                           for f in DEFAULT_FILAMENTS]}
+
+
+@api_router.get("/filaments/library")
+async def filament_library():
+    """The full curated filament library used by the palette suggester."""
+    return {"filaments": [{"name": f.name, "hex": f.hex, "td": f.td}
+                          for f in FILAMENT_LIBRARY]}
+
+
+class SuggestIn(BaseModel):
+    image_id: str
+    palette_size: int = 6
+
+
+@api_router.post("/palette/suggest")
+async def suggest_palette_endpoint(body: SuggestIn):
+    if body.image_id not in UPLOADS:
+        raise HTTPException(status_code=404, detail="image_id not found")
+    image = UPLOADS[body.image_id]
+    size = max(2, min(8, body.palette_size))
+    chosen = suggest_palette(image, palette_size=size)
+    return {
+        "filaments": [
+            {"name": f.name, "hex": f.hex, "td": f.td} for f in chosen
+        ]
+    }
 
 
 @api_router.post("/upload", response_model=UploadOut)

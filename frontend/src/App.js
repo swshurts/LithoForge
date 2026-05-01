@@ -6,7 +6,7 @@ import { Viewport } from "@/components/Viewport";
 import { ConfigPanel } from "@/components/ConfigPanel";
 import { StatsPanel } from "@/components/StatsPanel";
 import { LayerTimeline } from "@/components/LayerTimeline";
-import { getDefaultFilaments, optimize, uploadImage } from "@/lib/api";
+import { getDefaultFilaments, optimize, suggestPalette, uploadImage } from "@/lib/api";
 
 const DEFAULT_CONFIG = {
   width_mm: 100,
@@ -29,6 +29,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [progressLabel, setProgressLabel] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
 
   useEffect(() => {
     getDefaultFilaments()
@@ -90,6 +91,28 @@ export default function App() {
     setResult(null);
   };
 
+  const handleSuggestPalette = async () => {
+    if (!imageId) {
+      toast.error("Upload an image first");
+      return;
+    }
+    setSuggesting(true);
+    try {
+      const suggested = await suggestPalette(imageId, maxActive);
+      setFilaments(suggested);
+      setAutoOrder(true);
+      toast.success(
+        `Suggested ${suggested.length} filaments: ${suggested
+          .map((f) => f.name)
+          .join(" · ")}`
+      );
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Suggestion failed");
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
   const canGenerate = useMemo(
     () => !!imageId && filaments.length > 0 && !uploading,
     [imageId, filaments, uploading]
@@ -134,6 +157,9 @@ export default function App() {
             maxActive={maxActive}
             autoOrder={autoOrder}
             setAutoOrder={setAutoOrder}
+            onSuggestPalette={handleSuggestPalette}
+            suggesting={suggesting}
+            canSuggest={!!imageId && !loading}
           />
         </aside>
       </div>

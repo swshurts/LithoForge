@@ -32,4 +32,12 @@ export const getDefaultFilaments = async () => {
   return data.filaments;
 };
 
+export const suggestPalette = async (imageId, paletteSize = 6) => {
+  const { data } = await api.post("/palette/suggest", {
+    image_id: imageId,
+    palette_size: paletteSize,
+  });
+  return data.filaments;
+};
+
 export const exportUrl = (jobId, kind) => `${API}/export/${jobId}/${kind}`;

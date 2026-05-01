@@ -59,7 +59,7 @@ export const UploadZone = ({ onFile, disabled }) => {
         </div>
       </div>
       <div className="absolute bottom-4 left-6 font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-600">
-        CMYKW · Beer-Lambert Δe76
+        Photo · Beer-Lambert Δe76
       </div>
       <div className="absolute bottom-4 right-6 font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-600">
         v1.0
