@@ -94,6 +94,16 @@ export default function App() {
     setResult(null);
   };
 
+  // Keep max_swaps consistent with the actual palette length: at most
+  // (length-1) so a 5-filament palette caps at 4 swaps, etc.
+  const handlePaletteSizeChange = (newSize) => {
+    setConfig((c) => {
+      const cap = Math.max(1, newSize - 1);
+      if (c.max_swaps > cap) return { ...c, max_swaps: cap };
+      return c;
+    });
+  };
+
   const handleSuggestPalette = async () => {
     if (!imageId) {
       toast.error("Upload an image first");
@@ -138,6 +148,7 @@ export default function App() {
             config={config}
             setConfig={setConfig}
             disabled={loading}
+            paletteLength={filaments.length}
           />
         </aside>
 
@@ -166,6 +177,7 @@ export default function App() {
             canSuggest={!!imageId && !loading}
             vibrancy={vibrancy}
             setVibrancy={setVibrancy}
+            onPaletteSizeChange={handlePaletteSizeChange}
           />
         </aside>
       </div>

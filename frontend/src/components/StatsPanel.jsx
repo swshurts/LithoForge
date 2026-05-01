@@ -61,6 +61,7 @@ export const StatsPanel = ({
   canSuggest,
   vibrancy,
   setVibrancy,
+  onPaletteSizeChange,
 }) => {
   const q = result ? quality(result.delta_e_mean) : null;
 
@@ -115,6 +116,7 @@ export const StatsPanel = ({
         maxActive={maxActive}
         autoOrder={autoOrder}
         setAutoOrder={setAutoOrder}
+        onPaletteSizeChange={onPaletteSizeChange}
       />
 
       <div className="border-t border-zinc-800" />

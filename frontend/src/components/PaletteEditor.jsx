@@ -1,8 +1,26 @@
 import React, { useEffect, useState } from "react";
-import { Pencil, Check, ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
+import {
+  Pencil,
+  Check,
+  ArrowLeft,
+  ArrowRight,
+  Sparkles,
+  X,
+  Plus,
+} from "lucide-react";
 import { getFilamentLibrary } from "../lib/api";
 
-const Swatch = ({ filament, idx, total, onChange, onMove, disabled, library }) => {
+const Swatch = ({
+  filament,
+  idx,
+  total,
+  onChange,
+  onMove,
+  onDelete,
+  canDelete,
+  disabled,
+  library,
+}) => {
   const [editing, setEditing] = useState(false);
   const [hex, setHex] = useState(filament.hex);
   const [td, setTd] = useState(filament.td);
@@ -28,9 +46,23 @@ const Swatch = ({ filament, idx, total, onChange, onMove, disabled, library }) =
       className="group relative"
     >
       <div
-        className="w-full aspect-square border border-zinc-800 transition-transform duration-150 group-hover:scale-[1.02]"
+        className="relative w-full aspect-square border border-zinc-800 transition-transform duration-150 group-hover:scale-[1.02]"
         style={{ background: filament.hex }}
-      />
+      >
+        {canDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(idx);
+            }}
+            data-testid={`delete-filament-${filament.name.toLowerCase()}`}
+            title={`Remove ${filament.name}`}
+            className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center bg-zinc-950 text-zinc-300 border border-zinc-700 hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors duration-150 opacity-0 group-hover:opacity-100"
+          >
+            <X className="w-2.5 h-2.5" strokeWidth={2.5} />
+          </button>
+        )}
+      </div>
       <div className="mt-1.5 flex items-center justify-between gap-1">
         <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-zinc-400 truncate">
           {filament.name}
@@ -150,12 +182,60 @@ const Swatch = ({ filament, idx, total, onChange, onMove, disabled, library }) =
   );
 };
 
+const AddTile = ({ library, onAdd, disabled }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative" data-testid="palette-add-tile">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        disabled={disabled}
+        data-testid="palette-add-btn"
+        className="w-full aspect-square border border-dashed border-zinc-700 hover:border-zinc-400 hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-150 flex flex-col items-center justify-center gap-1 text-zinc-400 hover:text-zinc-100"
+      >
+        <Plus className="w-4 h-4" strokeWidth={1.5} />
+        <span className="font-mono text-[8px] uppercase tracking-[0.15em]">
+          Add
+        </span>
+      </button>
+      {open && (
+        <div className="absolute z-30 top-full left-0 right-0 mt-1 panel p-2 min-w-[220px]">
+          <div className="font-mono text-[9px] uppercase tracking-[0.12em] text-zinc-500 mb-1.5">
+            Pick a filament
+          </div>
+          <div className="grid grid-cols-6 gap-1" data-testid="add-library-grid">
+            {library.map((f) => (
+              <button
+                key={f.name}
+                title={`${f.name} · ${f.hex} · TD ${f.td}`}
+                onClick={() => {
+                  onAdd(f);
+                  setOpen(false);
+                }}
+                data-testid={`add-pick-${f.name.toLowerCase()}`}
+                className="aspect-square border border-zinc-800 hover:border-zinc-400 hover:scale-110 transition-transform duration-100"
+                style={{ background: f.hex }}
+              />
+            ))}
+          </div>
+          <button
+            onClick={() => setOpen(false)}
+            className="mt-2 w-full font-mono text-[9px] uppercase tracking-[0.12em] text-zinc-500 hover:text-zinc-200 py-1"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const PaletteEditor = ({
   filaments,
   setFilaments,
   maxActive,
   autoOrder,
   setAutoOrder,
+  onPaletteSizeChange,
 }) => {
   const [library, setLibrary] = useState([]);
   useEffect(() => {
@@ -178,7 +258,28 @@ export const PaletteEditor = ({
     if (autoOrder) setAutoOrder(false);
   };
 
+  const onDelete = (idx) => {
+    if (filaments.length <= 2) return;
+    setFilaments((list) => list.filter((_, i) => i !== idx));
+    if (onPaletteSizeChange) onPaletteSizeChange(filaments.length - 1);
+  };
+
+  const onAdd = (libFil) => {
+    if (filaments.length >= 8) return;
+    setFilaments((list) => {
+      // Avoid duplicates by name; if already present do nothing.
+      if (list.some((f) => f.name === libFil.name)) return list;
+      return [
+        ...list,
+        { name: libFil.name, hex: libFil.hex, td: libFil.td },
+      ];
+    });
+    if (onPaletteSizeChange) onPaletteSizeChange(filaments.length + 1);
+  };
+
   const activeCount = Math.min(maxActive, filaments.length);
+  const canDeleteAny = filaments.length > 2;
+  const canAdd = filaments.length < 8;
 
   return (
     <div className="space-y-3" data-testid="palette-editor">
@@ -205,16 +306,21 @@ export const PaletteEditor = ({
               total={filaments.length}
               onChange={onChange}
               onMove={onMove}
+              onDelete={onDelete}
+              canDelete={canDeleteAny}
               disabled={i >= maxActive}
               library={library}
             />
           </div>
         ))}
+        {canAdd && library.length > 0 && (
+          <AddTile library={library} onAdd={onAdd} />
+        )}
       </div>
 
       <div className="font-mono text-[9px] text-zinc-600 leading-relaxed pt-1">
-        Click the pencil to pick a different filament from the library or
-        hand-edit hex / TD. Arrows reorder bottom→top of the print stack.
+        Pencil swaps from library or hand-edits hex/TD. Arrows reorder. Hover
+        a swatch and click ✕ to remove. + Add at the end (max 8).
       </div>
 
       <label

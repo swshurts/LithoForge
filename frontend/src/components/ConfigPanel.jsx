@@ -26,9 +26,10 @@ const Row = ({ label, value, unit, children, testid }) => (
   </div>
 );
 
-export const ConfigPanel = ({ config, setConfig, disabled }) => {
+export const ConfigPanel = ({ config, setConfig, disabled, paletteLength = 6 }) => {
   const update = (key, v) => setConfig((c) => ({ ...c, [key]: v }));
   const isPainting = config.render_mode === "painting";
+  const swapsMax = Math.max(1, Math.min(7, paletteLength - 1));
 
   return (
     <div
