@@ -209,7 +209,7 @@ export const ConfigPanel = ({ config, setConfig, disabled }) => {
               value={[config.max_swaps]}
               onValueChange={([v]) => update("max_swaps", v)}
               min={1}
-              max={4}
+              max={5}
               step={1}
               disabled={disabled}
             />

@@ -88,7 +88,7 @@ def optimized(client, uploaded):
         "thickness_mm": 3.0,
         "border_mm": 2.0,
         "layer_height_mm": 0.12,
-        "max_swaps": 4,
+        "max_swaps": 5,
         "geometry": "flat",
         "curve_radius_mm": 80.0,
     }
@@ -111,9 +111,9 @@ class TestHealth:
         body = r.json()
         assert "filaments" in body
         fils = body["filaments"]
-        assert len(fils) == 5
+        assert len(fils) == 6
         names = [f["name"] for f in fils]
-        assert set(names) == {"Key", "Cyan", "Magenta", "Yellow", "White"}
+        assert set(names) == {"White", "Yellow", "Magenta", "Green", "Blue", "Key"}
         for f in fils:
             assert set(f.keys()) >= {"name", "hex", "td"}
             assert f["hex"].startswith("#")
@@ -159,12 +159,12 @@ class TestOptimize:
         # total_layers should match round(thickness / layer_height) = 3/0.12 = 25
         assert d["total_layers"] == round(3.0 / 0.12)
         assert sum(d["layer_allocation"]) == d["total_layers"]
-        # max_swaps=4 → 5 filaments
-        assert len(d["filaments"]) == 5
+        # max_swaps=5 → 6 filaments
+        assert len(d["filaments"]) == 6
         # swap_heights count matches filaments (one entry per filament, origin included)
-        assert len(d["swap_heights_mm"]) == 5
+        assert len(d["swap_heights_mm"]) == 6
         # timeline entries have start/end Z
-        assert len(d["timeline"]) == 5
+        assert len(d["timeline"]) == 6
         for t in d["timeline"]:
             assert {"color", "name", "layers", "start_z_mm", "end_z_mm"} <= set(t.keys())
             assert t["end_z_mm"] >= t["start_z_mm"]

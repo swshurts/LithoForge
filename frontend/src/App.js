@@ -14,7 +14,7 @@ const DEFAULT_CONFIG = {
   thickness_mm: 3.0,
   border_mm: 2,
   layer_height_mm: 0.12,
-  max_swaps: 4,
+  max_swaps: 5,
   geometry: "flat",
   curve_radius_mm: 80,
 };
@@ -22,6 +22,7 @@ const DEFAULT_CONFIG = {
 export default function App() {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [filaments, setFilaments] = useState([]);
+  const [autoOrder, setAutoOrder] = useState(true);
   const [imageId, setImageId] = useState(null);
   const [sourceUrl, setSourceUrl] = useState(null);
   const [result, setResult] = useState(null);
@@ -70,6 +71,7 @@ export default function App() {
         image_id: imageId,
         ...config,
         filaments: filaments.slice(0, maxActive),
+        auto_order: autoOrder,
       };
       setProgressLabel("Matching pixels…");
       const data = await optimize(payload);
@@ -130,6 +132,8 @@ export default function App() {
             filaments={filaments}
             setFilaments={setFilaments}
             maxActive={maxActive}
+            autoOrder={autoOrder}
+            setAutoOrder={setAutoOrder}
           />
         </aside>
       </div>

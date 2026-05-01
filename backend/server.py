@@ -77,10 +77,11 @@ class OptimizeIn(BaseModel):
     thickness_mm: float = 3.0
     border_mm: float = 2.0
     layer_height_mm: float = 0.12
-    max_swaps: int = 4
+    max_swaps: int = 5
     geometry: str = "flat"     # flat | curved | cylindrical
     curve_radius_mm: float = 80.0
     filaments: Optional[List[FilamentIn]] = None
+    auto_order: bool = True
 
 
 class OptimizeOut(BaseModel):
@@ -175,6 +176,7 @@ async def optimize_endpoint(body: OptimizeIn):
         total_thickness_mm=body.thickness_mm,
         max_swaps=body.max_swaps,
         max_dimension_px=512,
+        auto_order=body.auto_order,
     )
 
     preview = base64.b64encode(rendered_to_png_bytes(result.rendered_rgb)).decode()

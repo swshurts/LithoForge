@@ -56,14 +56,17 @@ class Filament:
 
 # Printing order: bottom of the print (first layer, closest to the build
 # plate — the side facing the back-light) to top (the side facing the
-# viewer). Hueforge-style CMYKW lithophanes put W at the base so thin
-# regions stay bright, then Y → M → C add colour, and K caps only the
-# thickest, darkest regions.
+# viewer). A photographer-oriented 6-filament set: we drop Cyan (its role
+# is covered by the combination of Green and Blue) and add dedicated G and
+# B so saturated foliage and skies are reproducible without subtractive
+# muddying. W sits at the base so thin regions stay bright, K caps the
+# thickest shadows.
 DEFAULT_FILAMENTS: List[Filament] = [
     Filament("White",   "#f5f5f5", td=4.5),
     Filament("Yellow",  "#eab308", td=3.5),
     Filament("Magenta", "#ec4899", td=3.0),
-    Filament("Cyan",    "#06b6d4", td=3.0),
+    Filament("Green",   "#2ea043", td=3.0),
+    Filament("Blue",    "#1e45a8", td=2.0),
     Filament("Key",     "#111111", td=1.2),
 ]
 
@@ -216,34 +219,54 @@ def _evaluate_order(
     return float(min_d_flat.mean()), layer_map_flat, min_d_flat, allocation, lut_clipped
 
 
-# Orderings of the CMYKW palette to try. Bottom ↦ Top. Thin regions show the
-# *first* entry (closest to the back-light), so we always start with W or K
-# to bracket the luminance extremes. Between them we permute C/M/Y to cover
-# the common gamut paths.
-_CANDIDATE_ORDERS = [
-    ("White",   "Yellow",  "Magenta", "Cyan",    "Key"),
-    ("White",   "Yellow",  "Cyan",    "Magenta", "Key"),
-    ("White",   "Cyan",    "Magenta", "Yellow",  "Key"),
-    ("White",   "Magenta", "Yellow",  "Cyan",    "Key"),
-    ("White",   "Cyan",    "Yellow",  "Magenta", "Key"),
-    ("Key",     "Cyan",    "Magenta", "Yellow",  "White"),
-]
+from itertools import permutations
 
 
-def _reorder_by_names(filaments: List[Filament], names: Tuple[str, ...]) -> List[Filament]:
-    """Return filaments reordered by `names` tuple. Filaments not matched by
-    name are preserved in the order they appear."""
-    by_name = {f.name: f for f in filaments}
-    ordered: List[Filament] = []
-    used = set()
-    for n in names:
-        if n in by_name:
-            ordered.append(by_name[n])
-            used.add(n)
-    for f in filaments:
-        if f.name not in used:
-            ordered.append(f)
-    return ordered
+def _fast_mean_delta_e(
+    sample_lab: np.ndarray,
+    order: List[Filament],
+    total_layers: int,
+    layer_height_mm: float,
+    allocation: List[int],
+) -> float:
+    """Cheap ΔE estimate for a candidate ordering over a pre-sampled pixel
+    set. Used to rank orderings without paying for full-resolution matching."""
+    lut = simulate_stack(allocation, order, layer_height_mm)
+    lut_clipped = np.clip(lut, 0.0, 1.0)
+    lut_lab = skcolor.rgb2lab(lut_clipped.reshape(-1, 1, 3)).reshape(-1, 3)
+    d = np.linalg.norm(sample_lab[:, None, :] - lut_lab[None, :, :], axis=-1)
+    return float(d.min(axis=1).mean())
+
+
+_LUMINANCE_ENDPOINT_NAMES = {"White", "Key"}
+
+
+def _generate_candidate_orders(base_palette: List[Filament]) -> List[List[Filament]]:
+    """Generate physically-plausible stack orderings to search.
+
+    If White and Key are both present we fix them at the luminance extremes
+    (either W-bottom/K-top or K-bottom/W-top) and permute the remaining
+    chromatic filaments. Otherwise we only try the user-supplied order.
+    For 4+ middle filaments (e.g. 6-filament CMYKW+RGB) this generates
+    48 candidates which is fast enough when evaluated on a small sample.
+    """
+    candidates: List[List[Filament]] = [list(base_palette)]
+
+    names = [f.name for f in base_palette]
+    if "White" in names and "Key" in names:
+        w = next(f for f in base_palette if f.name == "White")
+        k = next(f for f in base_palette if f.name == "Key")
+        middle = [f for f in base_palette if f.name not in {"White", "Key"}]
+        # Cap middle permutations to avoid blow-up beyond 6 chromatic fils.
+        if len(middle) <= 5:
+            for perm in permutations(middle):
+                for order in (
+                    [w] + list(perm) + [k],  # W base, K cap
+                    [k] + list(perm) + [w],  # K base, W cap (dark-first)
+                ):
+                    if order not in candidates:
+                        candidates.append(order)
+    return candidates
 
 
 def optimize(
@@ -253,12 +276,14 @@ def optimize(
     total_thickness_mm: float,
     max_swaps: int,
     max_dimension_px: int = 512,
+    auto_order: bool = True,
 ) -> OptimizeResult:
     """Run the full CMYKW lithophane optimization.
 
-    Tries several physically-plausible stack orderings and keeps the one with
-    the smallest mean ΔE. For custom palettes (filaments whose names don't
-    match CMYKW) only the user-supplied order is evaluated."""
+    When `auto_order` is True the optimizer evaluates multiple stack orderings
+    on a down-sampled pixel set and picks the one with the smallest mean ΔE,
+    then runs full-resolution matching on that winner. When False, the
+    user-supplied order is used as-is."""
 
     # Down-sample for speed while preserving aspect.
     img = image.convert("RGB")
@@ -276,27 +301,39 @@ def optimize(
     base_palette = filaments[:n_filaments]
     total_layers = max(1, int(round(total_thickness_mm / layer_height_mm)))
 
-    # Build candidate orderings. Always include the user-supplied order.
-    known_names = {"White", "Yellow", "Magenta", "Cyan", "Key"}
-    names_in_palette = {f.name for f in base_palette}
-    candidates: List[List[Filament]] = [list(base_palette)]
-    if names_in_palette.issubset(known_names) and len(base_palette) >= 2:
-        for order_names in _CANDIDATE_ORDERS:
-            cand = _reorder_by_names(
-                base_palette, tuple(n for n in order_names if n in names_in_palette)
+    # Always use one allocation (histogram-based on the user's palette).
+    # Allocation is a function of the palette, not the order.
+    allocation = allocate_layers(arr, base_palette, total_layers)
+
+    if auto_order:
+        candidates = _generate_candidate_orders(base_palette)
+        # Use a sampled pixel set to rank candidates cheaply.
+        flat_lab = target_lab.reshape(-1, 3)
+        sample_size = min(4096, flat_lab.shape[0])
+        step = max(1, flat_lab.shape[0] // sample_size)
+        sample_lab = flat_lab[::step][:sample_size]
+
+        best_order = base_palette
+        best_mean = float("inf")
+        for cand in candidates:
+            # Reallocate per candidate since ordering affects which layers
+            # get assigned to which filament under the heuristic (it
+            # actually does not — allocate_layers doesn't depend on order —
+            # but pairing is clearer this way and cheap).
+            m = _fast_mean_delta_e(
+                sample_lab, cand, total_layers, layer_height_mm, allocation
             )
-            if len(cand) == len(base_palette) and cand != candidates[0]:
-                candidates.append(cand)
+            if m < best_mean:
+                best_mean = m
+                best_order = cand
+        used_filaments = best_order
+    else:
+        used_filaments = list(base_palette)
 
-    best = None  # (mean_de, order, layer_map_flat, min_d_flat, allocation, lut)
-    for order in candidates:
-        mean_de, lm_flat, min_d, alloc, lut_clipped = _evaluate_order(
-            arr, target_lab, order, total_layers, layer_height_mm
-        )
-        if best is None or mean_de < best[0]:
-            best = (mean_de, order, lm_flat, min_d, alloc, lut_clipped)
-
-    _, used_filaments, layer_map_flat, min_d_flat, allocation, lut_clipped = best
+    # Full-resolution evaluation of the chosen order.
+    _, layer_map_flat, min_d_flat, allocation, lut_clipped = _evaluate_order(
+        arr, target_lab, used_filaments, total_layers, layer_height_mm
+    )
     layer_map = layer_map_flat.reshape(arr.shape[:2]).astype(np.int32)
     rendered = lut_clipped[layer_map_flat].reshape(arr.shape)
 

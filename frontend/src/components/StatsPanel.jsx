@@ -54,6 +54,8 @@ export const StatsPanel = ({
   filaments,
   setFilaments,
   maxActive,
+  autoOrder,
+  setAutoOrder,
 }) => {
   const q = result ? quality(result.delta_e_mean) : null;
 
@@ -66,6 +68,8 @@ export const StatsPanel = ({
         filaments={filaments}
         setFilaments={setFilaments}
         maxActive={maxActive}
+        autoOrder={autoOrder}
+        setAutoOrder={setAutoOrder}
       />
 
       <div className="border-t border-zinc-800" />
