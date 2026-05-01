@@ -46,6 +46,7 @@ export default function App() {
   const [edits, setEdits] = useState({ ...DEFAULT_EDITS });
   // The original uploaded HTMLImageElement (kept so we can re-render edits).
   const originalImgRef = useRef(null);
+  const [originalImg, setOriginalImg] = useState(null);
   // Track which edits the current `imageId` was uploaded under so we know
   // when we need to re-upload the canvas-rendered version.
   const [uploadedEdits, setUploadedEdits] = useState({ ...DEFAULT_EDITS });
@@ -73,6 +74,7 @@ export default function App() {
       const img = new Image();
       img.onload = () => {
         originalImgRef.current = img;
+        setOriginalImg(img);
       };
       img.src = url;
       const data = await uploadImage(file);
@@ -141,6 +143,10 @@ export default function App() {
     setSourceUrl(null);
     setImageId(null);
     setResult(null);
+    setOriginalImg(null);
+    originalImgRef.current = null;
+    setEdits({ ...DEFAULT_EDITS });
+    setUploadedEdits({ ...DEFAULT_EDITS });
   };
 
   // Keep max_swaps consistent with the actual palette length: at most
@@ -202,6 +208,7 @@ export default function App() {
             edits={edits}
             setEdits={setEdits}
             hasImage={!!imageId}
+            originalImg={originalImg}
           />
         </aside>
 
@@ -215,6 +222,7 @@ export default function App() {
             onReset={handleReset}
             renderMode={config.render_mode}
             edits={edits}
+            setEdits={setEdits}
           />
         </main>
 

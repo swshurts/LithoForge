@@ -1,18 +1,21 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Loader2, RefreshCw, Eye, Grid3x3 } from "lucide-react";
+import { Loader2, RefreshCw, Eye, Grid3x3, SplitSquareHorizontal } from "lucide-react";
 import { UploadZone } from "./UploadZone";
 import { editsToCssFilter, editsToClipPath, editsAreActive } from "./ImageEditPanel";
+import { CropOverlay } from "./CropOverlay";
+import { CompareSlider } from "./CompareSlider";
 
-const ViewTabs = ({ active, setActive }) => (
+const ViewTabs = ({ active, setActive, hasResult }) => (
   <div
     className="inline-flex border border-zinc-800 bg-zinc-950"
     data-testid="view-tabs"
   >
     {[
-      { id: "preview", label: "COLOUR", icon: Eye },
-      { id: "heightmap", label: "HEIGHT", icon: Grid3x3 },
-      { id: "original", label: "SOURCE", icon: RefreshCw },
-    ].map((t) => {
+      { id: "preview", label: "COLOUR", icon: Eye, requiresResult: true },
+      { id: "heightmap", label: "HEIGHT", icon: Grid3x3, requiresResult: true },
+      { id: "compare", label: "A/B", icon: SplitSquareHorizontal, requiresResult: true },
+      { id: "original", label: "SOURCE", icon: RefreshCw, requiresResult: false },
+    ].filter((t) => !t.requiresResult || hasResult).map((t) => {
       const Icon = t.icon;
       return (
         <button
@@ -42,8 +45,10 @@ export const Viewport = ({
   onReset,
   renderMode,
   edits,
+  setEdits,
 }) => {
   const [view, setView] = useState("preview");
+  const imgWrapRef = useRef(null);
 
   useEffect(() => {
     if (result && view === "original") setView("preview");
@@ -97,7 +102,7 @@ export const Viewport = ({
           )}
         </div>
         <div className="flex items-center gap-3">
-          {result && <ViewTabs active={view} setActive={setView} />}
+          <ViewTabs active={view} setActive={setView} hasResult={!!result} />
           <button
             onClick={onReset}
             data-testid="reset-btn"
@@ -109,36 +114,53 @@ export const Viewport = ({
       </div>
 
       <div className="relative z-10 flex-1 flex items-center justify-center p-6 overflow-hidden">
-        <div
-          className="relative border border-zinc-800 max-h-full max-w-full"
-          data-testid="viewport-image-wrap"
-        >
-          <img
-            src={previewSrc}
-            alt="lithophane"
-            className="block max-h-[70vh] max-w-full object-contain"
-            data-testid="viewport-image"
-            style={{
-              filter: filterStyle,
-              clipPath: clipStyle,
-              ...(view === "heightmap"
-                ? { imageRendering: "pixelated" }
-                : {}),
-            }}
+        {view === "compare" && result ? (
+          <CompareSlider
+            before={sourceUrl}
+            after={`data:image/png;base64,${result.preview_png_base64}`}
+            leftLabel="ORIGINAL"
+            rightLabel={renderMode === "painting" ? "PAINTED" : "LITHOPHANE"}
           />
-          {view === "preview" && result && (
-            <div className="absolute top-2 left-2 font-mono text-[9px] tracking-[0.2em] text-zinc-300 bg-black/60 px-2 py-0.5 border border-white/10">
-              {renderMode === "painting"
-                ? "PAINT PREVIEW · NEAREST-FILAMENT MAPPING"
-                : "SIMULATED BACKLIT OUTPUT"}
-            </div>
-          )}
-          {view === "heightmap" && (
-            <div className="absolute top-2 left-2 font-mono text-[9px] tracking-[0.2em] text-zinc-300 bg-black/60 px-2 py-0.5 border border-white/10">
-              HEIGHT MAP · BRIGHTER = THICKER
-            </div>
-          )}
-        </div>
+        ) : (
+          <div
+            ref={imgWrapRef}
+            className="relative border border-zinc-800 max-h-full max-w-full inline-block"
+            data-testid="viewport-image-wrap"
+          >
+            <img
+              src={previewSrc}
+              alt="lithophane"
+              className="block max-h-[70vh] max-w-full object-contain"
+              data-testid="viewport-image"
+              style={{
+                filter: filterStyle,
+                clipPath: clipStyle,
+                ...(view === "heightmap"
+                  ? { imageRendering: "pixelated" }
+                  : {}),
+              }}
+            />
+            {liveEdit && setEdits && (
+              <CropOverlay
+                edits={edits}
+                setEdits={setEdits}
+                containerRef={imgWrapRef}
+              />
+            )}
+            {view === "preview" && result && (
+              <div className="absolute top-2 left-2 font-mono text-[9px] tracking-[0.2em] text-zinc-300 bg-black/60 px-2 py-0.5 border border-white/10">
+                {renderMode === "painting"
+                  ? "PAINT PREVIEW · NEAREST-FILAMENT MAPPING"
+                  : "SIMULATED BACKLIT OUTPUT"}
+              </div>
+            )}
+            {view === "heightmap" && (
+              <div className="absolute top-2 left-2 font-mono text-[9px] tracking-[0.2em] text-zinc-300 bg-black/60 px-2 py-0.5 border border-white/10">
+                HEIGHT MAP · BRIGHTER = THICKER
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {loading && (

@@ -35,6 +35,7 @@ export const ConfigPanel = ({
   edits,
   setEdits,
   hasImage,
+  originalImg,
 }) => {
   const update = (key, v) => setConfig((c) => ({ ...c, [key]: v }));
   const isPainting = config.render_mode === "painting";
@@ -51,6 +52,7 @@ export const ConfigPanel = ({
             edits={edits}
             setEdits={setEdits}
             disabled={disabled}
+            image={originalImg}
           />
           <div className="border-t border-zinc-800" />
         </>

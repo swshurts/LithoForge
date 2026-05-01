@@ -2,6 +2,7 @@ import React from "react";
 import { Slider } from "./ui/slider";
 import { Label } from "./ui/label";
 import { RotateCcw } from "lucide-react";
+import { Histogram } from "./Histogram";
 
 export const DEFAULT_EDITS = {
   brightness: 100, // 0..200 (100 = unchanged)
@@ -48,7 +49,7 @@ const Row = ({ label, value, unit, children, testid }) => (
   </div>
 );
 
-export const ImageEditPanel = ({ edits, setEdits, disabled }) => {
+export const ImageEditPanel = ({ edits, setEdits, disabled, image }) => {
   const update = (key, v) => setEdits((e) => ({ ...e, [key]: v }));
   const reset = () => setEdits({ ...DEFAULT_EDITS });
   const active = editsAreActive(edits);
@@ -69,6 +70,12 @@ export const ImageEditPanel = ({ edits, setEdits, disabled }) => {
           Reset
         </button>
       </div>
+
+      {image && (
+        <div className="mb-3">
+          <Histogram image={image} edits={edits} />
+        </div>
+      )}
 
       <div className="space-y-3">
         <Row
@@ -135,6 +142,10 @@ export const ImageEditPanel = ({ edits, setEdits, disabled }) => {
 
         <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
           Crop
+        </div>
+        <div className="font-mono text-[9px] text-zinc-600 leading-relaxed">
+          Drag the handles directly on the viewport to crop. The numbers below
+          mirror the overlay and clamp at 45% per side.
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Row label="Left" value={edits.cropL} unit="%" testid="row-cropL">
