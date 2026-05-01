@@ -1,0 +1,114 @@
+{
+  "theme": {
+    "mode": "dark",
+    "archetype": "4 (Swiss & High-Contrast)",
+    "description": "Technical, precise, and high-contrast control room aesthetic for a 3D printing tool."
+  },
+  "typography": {
+    "fonts": {
+      "headings": "Chivo, sans-serif",
+      "body": "Inter, sans-serif",
+      "monospace": "JetBrains Mono, monospace"
+    },
+    "hierarchy": {
+      "h1": "text-4xl tracking-tighter font-black",
+      "h2": "text-2xl tracking-tight font-bold",
+      "h3": "text-xl font-semibold",
+      "h4": "text-sm font-bold uppercase tracking-[0.15em]",
+      "body": "text-sm leading-relaxed",
+      "technical": "font-mono text-xs tracking-tight"
+    }
+  },
+  "colors": {
+    "background": {
+      "page": "#09090b",
+      "surface": "#18181b",
+      "panel": "#000000"
+    },
+    "text": {
+      "primary": "#fafafa",
+      "secondary": "#a1a1aa",
+      "muted": "#71717a"
+    },
+    "border": {
+      "default": "#27272a",
+      "focus": "#52525b"
+    },
+    "accents": {
+      "cyan": "#06b6d4",
+      "magenta": "#ec4899",
+      "yellow": "#eab308",
+      "key": "#000000",
+      "white": "#ffffff",
+      "primary": "#fafafa"
+    }
+  },
+  "layout": {
+    "strategy": "Mode B: The 'Control Room' Grid",
+    "spacing": {
+      "gap": "gap-4 md:gap-6",
+      "padding": "p-4 md:p-6"
+    },
+    "structure": [
+      {
+        "area": "Header",
+        "description": "Sticky top bar, solid background with bottom border. Contains logo and main actions."
+      },
+      {
+        "area": "Left Sidebar (Config)",
+        "description": "Settings for geometry, thickness, and max layers. Sliders and inputs."
+      },
+      {
+        "area": "Center (Viewport)",
+        "description": "Main 3D/2D preview area. Large, edge-to-edge container with subtle grid background."
+      },
+      {
+        "area": "Right Sidebar (Palette & Stats)",
+        "description": "CMYKW color palette configuration, delta-E stats, layer breakdown, and download actions."
+      },
+      {
+        "area": "Timeline / Bottom Bar",
+        "description": "Layer-by-layer visualization using CMYKW color bands."
+      }
+    ],
+    "corners": "rounded-none or max rounded-sm for a technical sharp look."
+  },
+  "surfaces": {
+    "panels": "Flat backgrounds, 1px subtle border, no shadows. Grid Borders (Technical Look).",
+    "interactive": "Hover states use lighter background (e.g., hover:bg-zinc-800), active states inset slightly."
+  },
+  "components": {
+    "sliders": "Sharp corners, high contrast track, mono font for values.",
+    "buttons": "Square or rounded-sm, primary button uses high contrast (white bg, black text) or a technical accent. Action buttons have 1px solid border.",
+    "inputs": "Flat, dark background, 1px border, focus rings in neutral grey.",
+    "color_swatches": "Square blocks with 1px border, hover to edit filament hex value."
+  },
+  "motion": {
+    "strategy": "Minimalist and snappy.",
+    "duration": "duration-150 or duration-200",
+    "easing": "ease-out"
+  },
+  "media": {
+    "image_urls": {
+      "empty_state_viewport": {
+        "url": "https://images.unsplash.com/photo-1708778002477-75611274f23d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTV8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMDNEJTIwZ2VvbWV0cnklMjBkYXJrfGVufDB8fHx8MTc3NzY1NjU0MHww&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract 3D dark geometry for the empty state background of the preview viewport."
+      }
+    }
+  },
+  "icons": {
+    "library": "lucide-react",
+    "style": "Technical, clean, stroke-width 1.5"
+  },
+  "instructions_to_main_agent": [
+    "Install Google Fonts for 'Chivo' and 'JetBrains Mono' in the global CSS or index.html.",
+    "Use Shadcn UI for Sliders, Tabs, Selects, and Inputs. Override their default rounded corners to 'rounded-none' or 'rounded-sm' for a technical look.",
+    "Construct the main layout as a full-height (h-screen) CSS Grid with 3 columns on desktop: [Left Config 300px] [Center Viewport 1fr] [Right Stats/Export 300px].",
+    "The 3D preview area should be the dominant visual element. If 3D rendering is complex, implement a high-fidelity 2D placeholder with the abstract image.",
+    "For the CMYKW palette editor, render 5 distinct square swatches displaying the respective colors.",
+    "Ensure the layer progress timeline visually represents the colors using segmented progress bars (Cyan, Magenta, Yellow, Black, White).",
+    "All interactive elements MUST include a 'data-testid' attribute (e.g., data-testid='upload-zone', data-testid='generate-button').",
+    "Do NOT use pure #000000 for backgrounds, except for isolated contrast areas. Use #09090b (zinc-950) as the base page background.",
+    "Do not center-align labels; keep them left-aligned for data readability."
+  ]
+}
