@@ -32,6 +32,7 @@ export default function App() {
   const [progressLabel, setProgressLabel] = useState("");
   const [uploading, setUploading] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
+  const [vibrancy, setVibrancy] = useState(0.5);
 
   useEffect(() => {
     getDefaultFilaments()
@@ -100,7 +101,7 @@ export default function App() {
     }
     setSuggesting(true);
     try {
-      const suggested = await suggestPalette(imageId, maxActive);
+      const suggested = await suggestPalette(imageId, maxActive, vibrancy);
       setFilaments(suggested);
       setAutoOrder(true);
       toast.success(
@@ -163,6 +164,8 @@ export default function App() {
             onSuggestPalette={handleSuggestPalette}
             suggesting={suggesting}
             canSuggest={!!imageId && !loading}
+            vibrancy={vibrancy}
+            setVibrancy={setVibrancy}
           />
         </aside>
       </div>

@@ -59,6 +59,8 @@ export const StatsPanel = ({
   onSuggestPalette,
   suggesting,
   canSuggest,
+  vibrancy,
+  setVibrancy,
 }) => {
   const q = result ? quality(result.delta_e_mean) : null;
 
@@ -67,7 +69,30 @@ export const StatsPanel = ({
       className="h-full overflow-y-auto p-5 space-y-6"
       data-testid="stats-panel"
     >
-      <div className="space-y-3">
+      <div className="space-y-2">
+        <div className="grid grid-cols-3 border border-zinc-800" data-testid="vibrancy-toggle">
+          {[
+            { id: 0.0, label: "Accurate" },
+            { id: 0.5, label: "Balanced" },
+            { id: 1.0, label: "Vibrant" },
+          ].map((opt, i) => {
+            const active = Math.abs(opt.id - vibrancy) < 0.05;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setVibrancy(opt.id)}
+                data-testid={`vibrancy-${opt.label.toLowerCase()}`}
+                className={`px-2 py-1.5 text-[9px] font-bold uppercase tracking-[0.12em] transition-colors duration-150 ${
+                  active
+                    ? "bg-zinc-100 text-zinc-950"
+                    : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
+                } ${i > 0 ? "border-l border-zinc-800" : ""}`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
         <button
           onClick={onSuggestPalette}
           disabled={!canSuggest || suggesting}

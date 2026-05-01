@@ -159,6 +159,7 @@ async def filament_library():
 class SuggestIn(BaseModel):
     image_id: str
     palette_size: int = 6
+    vibrancy: float = 0.0
 
 
 @api_router.post("/palette/suggest")
@@ -167,7 +168,8 @@ async def suggest_palette_endpoint(body: SuggestIn):
         raise HTTPException(status_code=404, detail="image_id not found")
     image = UPLOADS[body.image_id]
     size = max(2, min(8, body.palette_size))
-    chosen = suggest_palette(image, palette_size=size)
+    vibrancy = max(0.0, min(1.0, body.vibrancy))
+    chosen = suggest_palette(image, palette_size=size, vibrancy=vibrancy)
     return {
         "filaments": [
             {"name": f.name, "hex": f.hex, "td": f.td} for f in chosen

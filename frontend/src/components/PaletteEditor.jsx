@@ -1,13 +1,24 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Pencil, Check, ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
+import { getFilamentLibrary } from "../lib/api";
 
-const Swatch = ({ filament, idx, total, onChange, onMove, disabled }) => {
+const Swatch = ({ filament, idx, total, onChange, onMove, disabled, library }) => {
   const [editing, setEditing] = useState(false);
   const [hex, setHex] = useState(filament.hex);
   const [td, setTd] = useState(filament.td);
 
+  useEffect(() => {
+    setHex(filament.hex);
+    setTd(filament.td);
+  }, [filament.hex, filament.td]);
+
   const commit = () => {
     onChange(idx, { ...filament, hex, td: parseFloat(td) || filament.td });
+    setEditing(false);
+  };
+
+  const swapFromLibrary = (libFil) => {
+    onChange(idx, { name: libFil.name, hex: libFil.hex, td: libFil.td });
     setEditing(false);
   };
 
@@ -60,7 +71,45 @@ const Swatch = ({ filament, idx, total, onChange, onMove, disabled }) => {
       </div>
 
       {editing && (
-        <div className="absolute z-20 top-full left-0 right-0 mt-1 panel p-2 space-y-2">
+        <div className="absolute z-20 top-full left-0 right-0 mt-1 panel p-2 space-y-2 min-w-[220px]">
+          {library && library.length > 0 && (
+            <div>
+              <div className="font-mono text-[9px] uppercase tracking-[0.12em] text-zinc-500 mb-1.5">
+                Swap from library
+              </div>
+              <div
+                className="grid grid-cols-6 gap-1"
+                data-testid={`library-grid-${filament.name.toLowerCase()}`}
+              >
+                {library.map((f) => {
+                  const isSelf = f.name === filament.name;
+                  return (
+                    <button
+                      key={f.name}
+                      title={`${f.name} · ${f.hex} · TD ${f.td}`}
+                      onClick={() => swapFromLibrary(f)}
+                      disabled={isSelf}
+                      data-testid={`lib-pick-${filament.name.toLowerCase()}-${f.name.toLowerCase()}`}
+                      className={`aspect-square border transition-transform duration-100 hover:scale-110 ${
+                        isSelf
+                          ? "border-zinc-100"
+                          : "border-zinc-800 hover:border-zinc-400"
+                      }`}
+                      style={{ background: f.hex }}
+                    />
+                  );
+                })}
+              </div>
+              <div className="font-mono text-[9px] text-zinc-600 mt-1.5">
+                Hover for name & TD.
+              </div>
+            </div>
+          )}
+
+          <div className="border-t border-zinc-800 my-1" />
+          <div className="font-mono text-[9px] uppercase tracking-[0.12em] text-zinc-500">
+            Or tweak manually
+          </div>
           <div className="flex items-center gap-2">
             <input
               type="color"
@@ -108,6 +157,13 @@ export const PaletteEditor = ({
   autoOrder,
   setAutoOrder,
 }) => {
+  const [library, setLibrary] = useState([]);
+  useEffect(() => {
+    getFilamentLibrary()
+      .then(setLibrary)
+      .catch(() => {});
+  }, []);
+
   const onChange = (idx, f) =>
     setFilaments((list) => list.map((x, i) => (i === idx ? f : x)));
 
@@ -119,7 +175,6 @@ export const PaletteEditor = ({
       next.splice(to, 0, item);
       return next;
     });
-    // Manually moving things implies the user wants their order respected.
     if (autoOrder) setAutoOrder(false);
   };
 
@@ -139,7 +194,7 @@ export const PaletteEditor = ({
       <div className="grid grid-cols-3 gap-2">
         {filaments.map((f, i) => (
           <div
-            key={f.name}
+            key={`${f.name}-${i}`}
             className={`transition-opacity duration-150 ${
               i < maxActive ? "opacity-100" : "opacity-30"
             }`}
@@ -151,14 +206,15 @@ export const PaletteEditor = ({
               onChange={onChange}
               onMove={onMove}
               disabled={i >= maxActive}
+              library={library}
             />
           </div>
         ))}
       </div>
 
       <div className="font-mono text-[9px] text-zinc-600 leading-relaxed pt-1">
-        Order is bottom → top of the print. Slot 1 sits against the back-light
-        (thin regions show it); the last slot caps the deepest shadows.
+        Click the pencil to pick a different filament from the library or
+        hand-edit hex / TD. Arrows reorder bottom→top of the print stack.
       </div>
 
       <label

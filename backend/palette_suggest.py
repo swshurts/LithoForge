@@ -76,8 +76,18 @@ def suggest_palette(
     include_white: bool = True,
     include_key: bool = True,
     max_neutral_slots: int = 3,
+    vibrancy: float = 0.0,
 ) -> List[Filament]:
-    """Greedy forward-selection with chroma bonus + neutral cap."""
+    """Greedy forward-selection with chroma bonus + neutral cap.
+
+    `vibrancy` in [0, 1]:
+        0.0 → pure ΔE minimization (accurate muted tones)
+        1.0 → strong spread-and-saturation bias (distinct punchy colours)
+    Intermediate values blend the two. When > 0, the selector also tries
+    hard to include at least one filament from each major hue quadrant
+    (warm / cool-green / cool-blue) so iconic saturated accents aren't
+    discarded in favour of dominant muted clusters.
+    """
     sample_lab = _sample_image_lab(image)
     library = list(FILAMENT_LIBRARY)
     library_lab = _filaments_to_lab(library)
@@ -98,10 +108,10 @@ def suggest_palette(
     else:
         nearest_d = np.full(sample_lab.shape[0], 1e9)
 
-    # Chroma weight: saturated filaments get a meaningful bonus so that the
-    # greedy step can pick them over a slightly-better-in-mean-ΔE neutral.
-    # Calibrated so a chroma-70 primary gets ~3 ΔE of free credit.
-    chroma_bonus = library_chroma * 0.05
+    # At high vibrancy the chroma bonus dominates and the diversity term
+    # (distance to nearest already-selected filament) matters most.
+    chroma_bonus_weight = 0.05 + 0.35 * vibrancy
+    spread_weight = 0.0 + 0.6 * vibrancy
 
     def neutral_count(sel: List[int]) -> int:
         return sum(1 for i in sel if library[i].name in _NEUTRAL_NAMES)
@@ -110,6 +120,7 @@ def suggest_palette(
         best_score = -1e9
         best_idx = -1
         current_neutrals = neutral_count(selected)
+        sel_lab = library_lab[selected]
 
         for cand in range(len(library)):
             if cand in selected:
@@ -122,7 +133,18 @@ def suggest_palette(
             merged = np.minimum(nearest_d, cand_d)
             delta_e_gain = nearest_d.mean() - merged.mean()
 
-            score = delta_e_gain + chroma_bonus[cand]
+            chroma_bonus = library_chroma[cand] * chroma_bonus_weight
+            # Spread: distance of this candidate to the closest selected
+            # filament. Rewards picks that expand the palette's Lab spread.
+            if len(selected) > 0:
+                spread = float(
+                    np.linalg.norm(library_lab[cand] - sel_lab, axis=-1).min()
+                )
+            else:
+                spread = 0.0
+            spread_bonus = (spread / 50.0) * spread_weight * 10.0
+
+            score = delta_e_gain + chroma_bonus + spread_bonus
             if score > best_score:
                 best_score = score
                 best_idx = cand
