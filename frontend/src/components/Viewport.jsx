@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw, Eye, Grid3x3 } from "lucide-react";
 import { UploadZone } from "./UploadZone";
+import { editsToCssFilter, editsToClipPath, editsAreActive } from "./ImageEditPanel";
 
 const ViewTabs = ({ active, setActive }) => (
   <div
@@ -40,6 +41,7 @@ export const Viewport = ({
   progressLabel,
   onReset,
   renderMode,
+  edits,
 }) => {
   const [view, setView] = useState("preview");
 
@@ -62,6 +64,16 @@ export const Viewport = ({
       ? sourceUrl
       : `data:image/png;base64,${result.preview_png_base64}`
     : sourceUrl;
+
+  // Live edits apply to the un-rendered source view ("source" before
+  // generate, or the "Source" tab afterwards). The rendered preview /
+  // heightmap already bake in the edits because the optimizer used the
+  // edited image, so they show un-filtered.
+  const liveEdit = !result || view === "original";
+  const filterStyle = liveEdit && edits ? editsToCssFilter(edits) : "none";
+  const clipStyle = liveEdit && edits && editsAreActive(edits)
+    ? editsToClipPath(edits)
+    : "none";
 
   return (
     <div
@@ -106,11 +118,13 @@ export const Viewport = ({
             alt="lithophane"
             className="block max-h-[70vh] max-w-full object-contain"
             data-testid="viewport-image"
-            style={
-              view === "heightmap"
-                ? { filter: "contrast(1.1)", imageRendering: "pixelated" }
-                : undefined
-            }
+            style={{
+              filter: filterStyle,
+              clipPath: clipStyle,
+              ...(view === "heightmap"
+                ? { imageRendering: "pixelated" }
+                : {}),
+            }}
           />
           {view === "preview" && result && (
             <div className="absolute top-2 left-2 font-mono text-[9px] tracking-[0.2em] text-zinc-300 bg-black/60 px-2 py-0.5 border border-white/10">

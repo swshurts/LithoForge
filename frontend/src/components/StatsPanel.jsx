@@ -28,26 +28,61 @@ const quality = (de) => {
   return { label: "FAR", color: "#ef4444" };
 };
 
-const DownloadButton = ({ href, icon: Icon, label, sub, testid }) => (
-  <a
-    href={href}
-    download
-    data-testid={testid}
-    className="group flex items-center gap-3 p-3 panel-muted hover:border-zinc-600 transition-colors duration-150"
-  >
-    <div className="w-9 h-9 border border-zinc-800 flex items-center justify-center group-hover:bg-zinc-100 group-hover:text-zinc-950 transition-colors duration-150">
-      <Icon className="w-4 h-4" strokeWidth={1.5} />
-    </div>
-    <div className="flex-1 min-w-0">
-      <div className="text-xs font-bold uppercase tracking-[0.12em]">{label}</div>
-      <div className="font-mono text-[10px] text-zinc-500 truncate">{sub}</div>
-    </div>
-    <Download
-      className="w-4 h-4 text-zinc-600 group-hover:text-zinc-200 transition-colors duration-150"
-      strokeWidth={1.5}
-    />
-  </a>
-);
+const downloadFile = async (url, filename) => {
+  const res = await fetch(url, { credentials: "omit" });
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+};
+
+const DownloadButton = ({ url, filename, icon: Icon, label, sub, testid }) => {
+  const [busy, setBusy] = React.useState(false);
+  const onClick = async (e) => {
+    e.preventDefault();
+    if (!url || busy) return;
+    setBusy(true);
+    try {
+      await downloadFile(url, filename);
+    } catch (err) {
+      // surface error via existing toaster from sonner
+      // eslint-disable-next-line no-undef
+      try { (await import("sonner")).toast.error(err.message || "Download failed"); }
+      catch { /* ignore */ }
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!url || busy}
+      data-testid={testid}
+      className="group w-full flex items-center gap-3 p-3 panel-muted hover:border-zinc-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-150 text-left"
+    >
+      <div className="w-9 h-9 border border-zinc-800 flex items-center justify-center group-hover:bg-zinc-100 group-hover:text-zinc-950 transition-colors duration-150">
+        <Icon className="w-4 h-4" strokeWidth={1.5} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-bold uppercase tracking-[0.12em]">{label}</div>
+        <div className="font-mono text-[10px] text-zinc-500 truncate">
+          {busy ? "Preparing…" : sub}
+        </div>
+      </div>
+      <Download
+        className="w-4 h-4 text-zinc-600 group-hover:text-zinc-200 transition-colors duration-150"
+        strokeWidth={1.5}
+      />
+    </button>
+  );
+};
 
 export const StatsPanel = ({
   result,
@@ -203,21 +238,24 @@ export const StatsPanel = ({
         </div>
         <div className="space-y-2">
           <DownloadButton
-            href={result ? exportUrl(result.job_id, "stl") : "#"}
+            url={result ? exportUrl(result.job_id, "stl") : null}
+            filename={result ? `lithophane_${result.job_id}.stl` : "lithophane.stl"}
             icon={FileBox}
             label="STL mesh"
             sub="Heightmap geometry"
             testid="download-stl"
           />
           <DownloadButton
-            href={result ? exportUrl(result.job_id, "swaps") : "#"}
+            url={result ? exportUrl(result.job_id, "swaps") : null}
+            filename={result ? `lithophane_${result.job_id}_swaps.txt` : "lithophane_swaps.txt"}
             icon={FileText}
             label="Swap instructions"
             sub="M600 + Z heights"
             testid="download-swaps"
           />
           <DownloadButton
-            href={result ? exportUrl(result.job_id, "3mf") : "#"}
+            url={result ? exportUrl(result.job_id, "3mf") : null}
+            filename={result ? `lithophane_${result.job_id}.3mf` : "lithophane.3mf"}
             icon={Layers}
             label="3MF bundle"
             sub="Mesh + filament metadata"

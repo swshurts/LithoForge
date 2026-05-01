@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import "@/App.css";
 import { toast, Toaster } from "sonner";
 import { Header } from "@/components/Header";
@@ -6,7 +6,17 @@ import { Viewport } from "@/components/Viewport";
 import { ConfigPanel } from "@/components/ConfigPanel";
 import { StatsPanel } from "@/components/StatsPanel";
 import { LayerTimeline } from "@/components/LayerTimeline";
-import { getDefaultFilaments, optimize, suggestPalette, uploadImage } from "@/lib/api";
+import {
+  DEFAULT_EDITS,
+  editsAreActive,
+  renderEditedImage,
+} from "@/components/ImageEditPanel";
+import {
+  getDefaultFilaments,
+  optimize,
+  suggestPalette,
+  uploadImage,
+} from "@/lib/api";
 
 const DEFAULT_CONFIG = {
   width_mm: 100,
@@ -33,6 +43,12 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [vibrancy, setVibrancy] = useState(0.5);
+  const [edits, setEdits] = useState({ ...DEFAULT_EDITS });
+  // The original uploaded HTMLImageElement (kept so we can re-render edits).
+  const originalImgRef = useRef(null);
+  // Track which edits the current `imageId` was uploaded under so we know
+  // when we need to re-upload the canvas-rendered version.
+  const [uploadedEdits, setUploadedEdits] = useState({ ...DEFAULT_EDITS });
 
   useEffect(() => {
     getDefaultFilaments()
@@ -49,11 +65,19 @@ export default function App() {
     }
     setUploading(true);
     setResult(null);
+    setEdits({ ...DEFAULT_EDITS });
     try {
       const url = URL.createObjectURL(file);
       setSourceUrl(url);
+      // Pre-load the original image element so we can re-render with edits.
+      const img = new Image();
+      img.onload = () => {
+        originalImgRef.current = img;
+      };
+      img.src = url;
       const data = await uploadImage(file);
       setImageId(data.image_id);
+      setUploadedEdits({ ...DEFAULT_EDITS });
       toast.success(`Loaded ${data.width}×${data.height} image`);
     } catch (e) {
       toast.error("Upload failed");
@@ -63,16 +87,41 @@ export default function App() {
     }
   };
 
+  // Make sure the backend's `imageId` reflects the *currently edited* version
+  // of the source photo. If edits changed since last upload, re-render the
+  // canvas, upload the resulting blob, and return the new image_id.
+  const ensureCurrentImageId = async () => {
+    if (!imageId) return null;
+    if (!editsAreActive(edits)) return imageId;
+    // Compare against the edits used at the previous upload.
+    const sameAsUploaded =
+      JSON.stringify(edits) === JSON.stringify(uploadedEdits);
+    if (sameAsUploaded) return imageId;
+
+    if (!originalImgRef.current) {
+      // Fall back to the un-edited image_id rather than failing.
+      toast.warning("Could not load original to apply edits — using upload as-is");
+      return imageId;
+    }
+    const blob = await renderEditedImage(originalImgRef.current, edits);
+    const file = new File([blob], "edited.png", { type: blob.type });
+    const data = await uploadImage(file);
+    setImageId(data.image_id);
+    setUploadedEdits({ ...edits });
+    return data.image_id;
+  };
+
   const handleGenerate = async () => {
     if (!imageId) {
       toast.error("Upload an image first");
       return;
     }
     setLoading(true);
-    setProgressLabel("Building LUT…");
+    setProgressLabel(editsAreActive(edits) ? "Applying edits…" : "Building LUT…");
     try {
+      const currentId = await ensureCurrentImageId();
       const payload = {
-        image_id: imageId,
+        image_id: currentId,
         ...config,
         filaments: filaments.slice(0, maxActive),
         auto_order: autoOrder,
@@ -111,7 +160,8 @@ export default function App() {
     }
     setSuggesting(true);
     try {
-      const suggested = await suggestPalette(imageId, maxActive, vibrancy);
+      const currentId = await ensureCurrentImageId();
+      const suggested = await suggestPalette(currentId, maxActive, vibrancy);
       setFilaments(suggested);
       setAutoOrder(true);
       toast.success(
@@ -149,6 +199,9 @@ export default function App() {
             setConfig={setConfig}
             disabled={loading}
             paletteLength={filaments.length}
+            edits={edits}
+            setEdits={setEdits}
+            hasImage={!!imageId}
           />
         </aside>
 
@@ -161,6 +214,7 @@ export default function App() {
             progressLabel={uploading ? "Uploading…" : progressLabel}
             onReset={handleReset}
             renderMode={config.render_mode}
+            edits={edits}
           />
         </main>
 

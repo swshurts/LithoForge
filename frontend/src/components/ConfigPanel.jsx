@@ -10,6 +10,7 @@ import {
 } from "./ui/select";
 import { Input } from "./ui/input";
 import { ModeToggle } from "./ModeToggle";
+import { ImageEditPanel } from "./ImageEditPanel";
 
 const Row = ({ label, value, unit, children, testid }) => (
   <div className="space-y-2" data-testid={testid}>
@@ -26,7 +27,15 @@ const Row = ({ label, value, unit, children, testid }) => (
   </div>
 );
 
-export const ConfigPanel = ({ config, setConfig, disabled, paletteLength = 6 }) => {
+export const ConfigPanel = ({
+  config,
+  setConfig,
+  disabled,
+  paletteLength = 6,
+  edits,
+  setEdits,
+  hasImage,
+}) => {
   const update = (key, v) => setConfig((c) => ({ ...c, [key]: v }));
   const isPainting = config.render_mode === "painting";
   const swapsMax = Math.max(1, Math.min(7, paletteLength - 1));
@@ -36,6 +45,17 @@ export const ConfigPanel = ({ config, setConfig, disabled, paletteLength = 6 }) 
       className="h-full overflow-y-auto p-5 space-y-6"
       data-testid="config-panel"
     >
+      {hasImage && edits && setEdits && (
+        <>
+          <ImageEditPanel
+            edits={edits}
+            setEdits={setEdits}
+            disabled={disabled}
+          />
+          <div className="border-t border-zinc-800" />
+        </>
+      )}
+
       <div>
         <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3">
           Render mode
