@@ -1,0 +1,40 @@
+{
+  "summary": "Backend-only testing of CMYKW Lithophane API. Created pytest suite covering 17 tests across health, filaments, upload, optimize, jobs, exports (STL/swaps/3MF), curved geometry, and legacy status endpoints. All 17 tests PASSED against the production preview URL.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_lithophane_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py uses @app.on_event('shutdown') which is deprecated in FastAPI; prefer lifespan context manager.",
+    "JOBS and UPLOADS are in-memory dicts. They will be wiped on backend restart and leak memory over time. Consider a TTL / LRU eviction strategy or persistence to Mongo for a production deployment.",
+    "exporters._build_mesh uses a Python for-loop over every pixel to append faces (O(H*W)). For 512x512 images this generates ~520K triangles and Python-level loops are slow; switching to vectorised numpy construction would speed up exports substantially.",
+    "write_stl_binary similarly writes one triangle at a time via struct.pack inside a Python loop — a single np.ndarray.tobytes() with a structured dtype would be much faster.",
+    "3MF XML is built via string concatenation with per-vertex Python f-strings, which is slow for large meshes. Consider using a list-join on pre-formatted arrays or an XML library.",
+    "/api/optimize can take several seconds; there is no timeout protection / concurrency limit. Multiple concurrent clients could exhaust CPU.",
+    "OptimizeIn.geometry accepts any string; should be a Literal['flat','curved','cylindrical'] for validation.",
+    "Filament.hex has no validation; an invalid hex will raise ValueError deep in the optimizer and surface as a 500."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_lithophane_api.py"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17)",
+    "frontend": "N/A (not requested)"
+  },
+  "test_credentials": "None required",
+  "seed_data_creation": "Test photo synthesised in-memory with gradients + primary-colour patches (PNG base64)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test suite at /app/backend/tests/test_lithophane_api.py is self-contained and reusable. It uses session-scoped fixtures for upload + optimize so the heavy optimize call only runs twice (once baseline, once for curved + max_swaps variants). BASE_URL falls back to reading /app/frontend/.env if REACT_APP_BACKEND_URL env var is unset. JOBS store is in-memory — if backend is restarted, job_id-based export tests will return 404; just re-run the suite which creates fresh ids.",
+  "rca of the issue": "No issues found. All backend contracts in the review request behave as specified: filaments default list (5 CMYKW in order), base64 / data-URL upload, invalid base64 → 400, optimize returns all required fields with total_layers == round(thickness/layer_height), layer_allocation summing to total_layers, max_swaps=2 yielding exactly 3 filaments with 2 non-origin swap heights, unknown image_id → 404, STL has valid 80-byte header + uint32 tri count and attachment disposition, swaps endpoint returns text/plain with M600 lines, 3MF is a valid zip containing 3D/3dmodel.model and [Content_Types].xml, unknown job_id on any export → 404, curved geometry STL export succeeds, legacy /api/status POST+GET persists to Mongo."
+}
