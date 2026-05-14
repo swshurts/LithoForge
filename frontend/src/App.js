@@ -71,16 +71,20 @@ export default function App() {
       const url = URL.createObjectURL(file);
       setSourceUrl(url);
       // Pre-load the original image element so we can re-render with edits.
+      // NOTE: blob: URLs are same-origin; do NOT set crossOrigin — Safari
+      // iOS rejects blob URLs with a crossOrigin attribute, leaving the
+      // image element permanently in a broken state.
       const img = new Image();
-      // Object URLs are same-origin, but setting crossOrigin keeps the
-      // canvas un-tainted in case anything proxies the resource later.
-      img.crossOrigin = "anonymous";
+      img.decoding = "async";
       img.onload = () => {
         originalImgRef.current = img;
         setOriginalImg(img);
       };
       img.onerror = () => {
-        toast.error("Could not decode image — try PNG or JPEG");
+        // Fall back to drawing directly from the blob via the viewport's
+        // <img> tag — we'll re-create the canvas-source when needed.
+        // eslint-disable-next-line no-console
+        console.warn("Hidden image element failed to load — edits will use viewport <img> instead");
       };
       img.src = url;
       const data = await uploadImage(file);
@@ -106,12 +110,30 @@ export default function App() {
       JSON.stringify(edits) === JSON.stringify(uploadedEdits);
     if (sameAsUploaded) return imageId;
 
-    if (!originalImgRef.current) {
-      // Fall back to the un-edited image_id rather than failing.
+    // Load (or re-load) the original from sourceUrl on demand so we never
+    // fall through to the "upload as-is" branch just because of a race
+    // between Image.decode and the upload network round-trip (common on
+    // Safari iOS with large photos).
+    let img = originalImgRef.current;
+    if (!img && sourceUrl) {
+      try {
+        img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = () => reject(new Error("decode failed"));
+          i.src = sourceUrl;
+        });
+        originalImgRef.current = img;
+        setOriginalImg(img);
+      } catch {
+        img = null;
+      }
+    }
+    if (!img) {
       toast.warning("Could not load original to apply edits — using upload as-is");
       return imageId;
     }
-    const blob = await renderEditedImage(originalImgRef.current, edits);
+    const blob = await renderEditedImage(img, edits);
     const file = new File([blob], "edited.png", { type: blob.type });
     const data = await uploadImage(file);
     setImageId(data.image_id);

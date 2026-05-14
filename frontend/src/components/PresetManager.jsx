@@ -140,8 +140,15 @@ export const PresetManager = ({
   const [showSave, setShowSave] = useState(false);
   const [name, setName] = useState("");
   const [selectedId, setSelectedId] = useState("");
+  // Skip the very first effect call so we don't write an empty array to
+  // localStorage on mount — Safari Private Browsing throws on setItem.
+  const persistedOnce = React.useRef(false);
 
   useEffect(() => {
+    if (!persistedOnce.current) {
+      persistedOnce.current = true;
+      return;
+    }
     saveUserPresets(userPresets);
   }, [userPresets]);
 
