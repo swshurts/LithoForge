@@ -72,9 +72,15 @@ export default function App() {
       setSourceUrl(url);
       // Pre-load the original image element so we can re-render with edits.
       const img = new Image();
+      // Object URLs are same-origin, but setting crossOrigin keeps the
+      // canvas un-tainted in case anything proxies the resource later.
+      img.crossOrigin = "anonymous";
       img.onload = () => {
         originalImgRef.current = img;
         setOriginalImg(img);
+      };
+      img.onerror = () => {
+        toast.error("Could not decode image — try PNG or JPEG");
       };
       img.src = url;
       const data = await uploadImage(file);

@@ -36,6 +36,7 @@ export const Histogram = ({ image, edits }) => {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !image) return;
+    if (!image.naturalWidth || !image.naturalHeight) return;
     if (!offscreenRef.current) {
       offscreenRef.current = document.createElement("canvas");
     }
@@ -44,7 +45,7 @@ export const Histogram = ({ image, edits }) => {
     const H = Math.max(1, Math.round((image.naturalHeight / image.naturalWidth) * W));
     off.width = W;
     off.height = H;
-    const offCtx = off.getContext("2d");
+    const offCtx = off.getContext("2d", { willReadFrequently: true });
     offCtx.filter = editsToCssFilter(edits);
     // Apply crop too so the histogram reflects the visible region.
     const cx = (edits.cropL / 100) * image.naturalWidth;
@@ -57,8 +58,20 @@ export const Histogram = ({ image, edits }) => {
       1,
       (1 - (edits.cropT + edits.cropB) / 100) * image.naturalHeight
     );
-    offCtx.drawImage(image, cx, cy, cw, ch, 0, 0, W, H);
-    const imgData = offCtx.getImageData(0, 0, W, H);
+
+    let imgData;
+    try {
+      offCtx.drawImage(image, cx, cy, cw, ch, 0, 0, W, H);
+      imgData = offCtx.getImageData(0, 0, W, H);
+    } catch (err) {
+      // Tainted canvas (cross-origin image) or oversized buffer — skip the
+      // histogram silently rather than crashing the whole edit panel.
+      // Slider adjustments must keep working even if the histogram can't
+      // read pixels back.
+      // eslint-disable-next-line no-console
+      console.warn("Histogram readback skipped:", err.message);
+      return;
+    }
     const { lum, r, g, b } = computeBins(imgData);
 
     const ctx = canvas.getContext("2d");

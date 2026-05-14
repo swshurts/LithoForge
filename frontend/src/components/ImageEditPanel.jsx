@@ -202,6 +202,10 @@ export const ImageEditPanel = ({ edits, setEdits, disabled, image }) => {
 export const renderEditedImage = (img, edits, format = "image/png", quality = 0.95) =>
   new Promise((resolve, reject) => {
     try {
+      if (!img || !img.naturalWidth) {
+        reject(new Error("Image not loaded yet"));
+        return;
+      }
       const w = img.naturalWidth;
       const h = img.naturalHeight;
       const cx = Math.round((edits.cropL / 100) * w);
@@ -212,9 +216,18 @@ export const renderEditedImage = (img, edits, format = "image/png", quality = 0.
       const canvas = document.createElement("canvas");
       canvas.width = cw;
       canvas.height = ch;
-      const ctx = canvas.getContext("2d");
-      ctx.filter = editsToCssFilter(edits);
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      // Browsers without Canvas2D ctx.filter (Safari < 18) silently no-op the
+      // assignment; in that case we re-apply brightness/contrast/saturation
+      // ourselves via a pixel-loop so the exported blob matches the preview.
+      const supportsCtxFilter = "filter" in ctx;
+      if (supportsCtxFilter) ctx.filter = editsToCssFilter(edits);
       ctx.drawImage(img, cx, cy, cw, ch, 0, 0, cw, ch);
+
+      if (!supportsCtxFilter && editsAreActive(edits)) {
+        applyEditsToPixels(ctx, cw, ch, edits);
+      }
+
       canvas.toBlob(
         (blob) => (blob ? resolve(blob) : reject(new Error("Canvas toBlob failed"))),
         format,
@@ -224,3 +237,31 @@ export const renderEditedImage = (img, edits, format = "image/png", quality = 0.
       reject(e);
     }
   });
+
+// Fallback pixel transform for browsers without Canvas2D `ctx.filter`.
+// Matches the CSS filter chain: brightness → contrast → saturate.
+const applyEditsToPixels = (ctx, w, h, edits) => {
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+  const br = edits.brightness / 100;
+  const co = edits.contrast / 100;
+  const sa = edits.saturation / 100;
+  for (let i = 0; i < d.length; i += 4) {
+    let r = d[i] * br;
+    let g = d[i + 1] * br;
+    let b = d[i + 2] * br;
+    // contrast around 0.5
+    r = (r - 127.5) * co + 127.5;
+    g = (g - 127.5) * co + 127.5;
+    b = (b - 127.5) * co + 127.5;
+    // saturation around luminance
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    r = lum + (r - lum) * sa;
+    g = lum + (g - lum) * sa;
+    b = lum + (b - lum) * sa;
+    d[i] = Math.max(0, Math.min(255, r));
+    d[i + 1] = Math.max(0, Math.min(255, g));
+    d[i + 2] = Math.max(0, Math.min(255, b));
+  }
+  ctx.putImageData(imgData, 0, 0);
+};
