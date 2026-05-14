@@ -111,9 +111,12 @@ class TestHealth:
         body = r.json()
         assert "filaments" in body
         fils = body["filaments"]
-        assert len(fils) == 6
+        assert len(fils) == 8
         names = [f["name"] for f in fils]
-        assert set(names) == {"White", "Yellow", "Magenta", "Green", "Blue", "Key"}
+        assert set(names) == {
+            "White", "Yellow", "Orange", "Red",
+            "Magenta", "Green", "Blue", "Key",
+        }
         for f in fils:
             assert set(f.keys()) >= {"name", "hex", "td"}
             assert f["hex"].startswith("#")

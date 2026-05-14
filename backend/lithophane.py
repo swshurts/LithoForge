@@ -64,6 +64,8 @@ class Filament:
 DEFAULT_FILAMENTS: List[Filament] = [
     Filament("White",   "#f5f5f5", td=5.0),
     Filament("Yellow",  "#eab308", td=1.8),
+    Filament("Orange",  "#f57f20", td=1.5),
+    Filament("Red",     "#d01e32", td=1.2),
     Filament("Magenta", "#ec4899", td=1.5),
     Filament("Green",   "#2ea043", td=1.5),
     Filament("Blue",    "#1e45a8", td=1.3),
