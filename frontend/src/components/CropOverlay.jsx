@@ -45,34 +45,68 @@ export const CropOverlay = ({ edits, setEdits, containerRef }) => {
         next.cropT = clamp(s.cropT + dy, 0, 100 - h);
         next.cropB = 100 - next.cropT - h;
       } else {
+        const isCorner = drag.id.length === 2; // tl/tr/bl/br
+        const shiftLock = e.shiftKey && isCorner;
+
+        // First, compute the desired raw L/R/T/B from the drag delta.
+        let nL = s.cropL;
+        let nR = s.cropR;
+        let nT = s.cropT;
+        let nB = s.cropB;
         if (drag.id.includes("l")) {
-          next.cropL = clamp(
-            s.cropL + dx,
-            0,
-            100 - s.cropR - MIN_REMAIN_PCT
-          );
+          nL = clamp(s.cropL + dx, 0, 100 - s.cropR - MIN_REMAIN_PCT);
         }
         if (drag.id.includes("r")) {
-          next.cropR = clamp(
-            s.cropR - dx,
-            0,
-            100 - s.cropL - MIN_REMAIN_PCT
-          );
+          nR = clamp(s.cropR - dx, 0, 100 - s.cropL - MIN_REMAIN_PCT);
         }
         if (drag.id.includes("t")) {
-          next.cropT = clamp(
-            s.cropT + dy,
-            0,
-            100 - s.cropB - MIN_REMAIN_PCT
-          );
+          nT = clamp(s.cropT + dy, 0, 100 - s.cropB - MIN_REMAIN_PCT);
         }
         if (drag.id.includes("b")) {
-          next.cropB = clamp(
-            s.cropB - dy,
-            0,
-            100 - s.cropT - MIN_REMAIN_PCT
-          );
+          nB = clamp(s.cropB - dy, 0, 100 - s.cropT - MIN_REMAIN_PCT);
         }
+
+        if (shiftLock) {
+          // Aspect-ratio lock: preserve the rect aspect (in image-pixel space)
+          // captured when the drag started. The dominant axis (whichever has
+          // moved more relative to its container side) drives the other.
+          const baseAspect = drag.aspectImg; // width / height in PIXELS
+          const cw = rect.width;
+          const ch = rect.height;
+          // current raw rect width/height in pixels
+          const newW_px = ((100 - nL - nR) / 100) * cw;
+          const newH_px = ((100 - nT - nB) / 100) * ch;
+          const driveByWidth =
+            Math.abs(newW_px / baseAspect - newH_px) <
+            Math.abs(newH_px * baseAspect - newW_px)
+              ? false
+              : true;
+
+          if (driveByWidth) {
+            // Width drives → recompute height to match aspect.
+            const targetH_px = newW_px / baseAspect;
+            const targetH_pct = (targetH_px / ch) * 100;
+            // Anchor the side opposite to the moving corner.
+            if (drag.id.includes("t")) {
+              nT = clamp(100 - nB - targetH_pct, 0, 100 - nB - MIN_REMAIN_PCT);
+            } else {
+              nB = clamp(100 - nT - targetH_pct, 0, 100 - nT - MIN_REMAIN_PCT);
+            }
+          } else {
+            const targetW_px = newH_px * baseAspect;
+            const targetW_pct = (targetW_px / cw) * 100;
+            if (drag.id.includes("l")) {
+              nL = clamp(100 - nR - targetW_pct, 0, 100 - nR - MIN_REMAIN_PCT);
+            } else {
+              nR = clamp(100 - nL - targetW_pct, 0, 100 - nL - MIN_REMAIN_PCT);
+            }
+          }
+        }
+
+        next.cropL = nL;
+        next.cropR = nR;
+        next.cropT = nT;
+        next.cropB = nB;
       }
 
       // Round to whole percentages for stable values.
@@ -94,11 +128,24 @@ export const CropOverlay = ({ edits, setEdits, containerRef }) => {
   const onDown = (id) => (e) => {
     e.preventDefault();
     e.stopPropagation();
+    const rect = containerRef.current?.getBoundingClientRect();
+    // Capture the *pixel* aspect ratio of the crop at drag start so the
+    // Shift-lock keeps the on-screen rect proportional regardless of the
+    // container's own width:height.
+    let aspectImg = 1;
+    if (rect) {
+      const w_pct = 100 - edits.cropL - edits.cropR;
+      const h_pct = 100 - edits.cropT - edits.cropB;
+      const w_px = (w_pct / 100) * rect.width;
+      const h_px = (h_pct / 100) * rect.height;
+      if (h_px > 0) aspectImg = w_px / h_px;
+    }
     setDrag({
       id,
       startX: e.clientX,
       startY: e.clientY,
       startEdits: { ...edits },
+      aspectImg,
     });
   };
 

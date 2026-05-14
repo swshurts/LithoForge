@@ -70,6 +70,22 @@ def _chroma(lab: np.ndarray) -> np.ndarray:
     return np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2)
 
 
+def _hue_angle(lab: np.ndarray) -> np.ndarray:
+    """Hue angle in radians, atan2(b, a). Returns shape lab.shape[:-1]."""
+    return np.arctan2(lab[..., 2], lab[..., 1])
+
+
+def _hue_wheel_gap(angle: float, taken: np.ndarray) -> float:
+    """Smallest angular distance (radians, 0..pi) from `angle` to any of
+    the already-selected hue angles. Returns pi when nothing is selected
+    so the first chromatic pick is unconstrained."""
+    if taken.size == 0:
+        return np.pi
+    diff = np.abs(angle - taken)
+    diff = np.minimum(diff, 2 * np.pi - diff)
+    return float(diff.min())
+
+
 def suggest_palette(
     image: Image.Image,
     palette_size: int = 6,
@@ -78,20 +94,22 @@ def suggest_palette(
     max_neutral_slots: int = 3,
     vibrancy: float = 0.0,
 ) -> List[Filament]:
-    """Greedy forward-selection with chroma bonus + neutral cap.
+    """Greedy forward-selection with chroma + hue-wheel coverage bonus.
 
     `vibrancy` in [0, 1]:
         0.0 → pure ΔE minimization (accurate muted tones)
-        1.0 → strong spread-and-saturation bias (distinct punchy colours)
-    Intermediate values blend the two. When > 0, the selector also tries
-    hard to include at least one filament from each major hue quadrant
-    (warm / cool-green / cool-blue) so iconic saturated accents aren't
-    discarded in favour of dominant muted clusters.
+        1.0 → strong hue-wheel-coverage bias (distinct punchy hues)
+    Intermediate values blend the two. At high vibrancy the selector
+    favours filaments whose hue angle (atan2(b*, a*)) sits farthest from
+    every already-picked chromatic filament — guaranteeing primary
+    accents are spread around the wheel rather than clustering near the
+    image's dominant hue family.
     """
     sample_lab = _sample_image_lab(image)
     library = list(FILAMENT_LIBRARY)
     library_lab = _filaments_to_lab(library)
     library_chroma = _chroma(library_lab)
+    library_hue = _hue_angle(library_lab)
     name_idx = {f.name: i for i, f in enumerate(library)}
 
     selected: List[int] = []
@@ -108,10 +126,13 @@ def suggest_palette(
     else:
         nearest_d = np.full(sample_lab.shape[0], 1e9)
 
-    # At high vibrancy the chroma bonus dominates and the diversity term
-    # (distance to nearest already-selected filament) matters most.
+    # At high vibrancy the chroma bonus dominates and hue-wheel gap
+    # ensures the picks cover distinct sectors of the colour wheel.
     chroma_bonus_weight = 0.05 + 0.35 * vibrancy
-    spread_weight = 0.0 + 0.6 * vibrancy
+    hue_gap_weight = 0.0 + 1.0 * vibrancy
+    # Minimum chroma to count a filament as "chromatic" when measuring
+    # hue-wheel coverage. Neutrals would otherwise wildly skew the angle.
+    CHROMA_THRESH = 12.0
 
     def neutral_count(sel: List[int]) -> int:
         return sum(1 for i in sel if library[i].name in _NEUTRAL_NAMES)
@@ -120,7 +141,10 @@ def suggest_palette(
         best_score = -1e9
         best_idx = -1
         current_neutrals = neutral_count(selected)
-        sel_lab = library_lab[selected]
+        chromatic_idx = [
+            i for i in selected if library_chroma[i] >= CHROMA_THRESH
+        ]
+        taken_hues = library_hue[chromatic_idx] if chromatic_idx else np.array([])
 
         for cand in range(len(library)):
             if cand in selected:
@@ -134,17 +158,23 @@ def suggest_palette(
             delta_e_gain = nearest_d.mean() - merged.mean()
 
             chroma_bonus = library_chroma[cand] * chroma_bonus_weight
-            # Spread: distance of this candidate to the closest selected
-            # filament. Rewards picks that expand the palette's Lab spread.
-            if len(selected) > 0:
-                spread = float(
-                    np.linalg.norm(library_lab[cand] - sel_lab, axis=-1).min()
+
+            # Hue-wheel coverage: only meaningful for chromatic candidates.
+            if library_chroma[cand] >= CHROMA_THRESH:
+                gap = _hue_wheel_gap(library_hue[cand], taken_hues)
+                # Normalize gap to 0..1 (pi = max possible gap), then weight
+                # by candidate chroma so saturated outliers win over muted
+                # ones at the same angular distance.
+                hue_bonus = (
+                    (gap / np.pi)
+                    * (library_chroma[cand] / 60.0)
+                    * hue_gap_weight
+                    * 25.0
                 )
             else:
-                spread = 0.0
-            spread_bonus = (spread / 50.0) * spread_weight * 10.0
+                hue_bonus = 0.0
 
-            score = delta_e_gain + chroma_bonus + spread_bonus
+            score = delta_e_gain + chroma_bonus + hue_bonus
             if score > best_score:
                 best_score = score
                 best_idx = cand

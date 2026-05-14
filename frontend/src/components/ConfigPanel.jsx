@@ -11,6 +11,7 @@ import {
 import { Input } from "./ui/input";
 import { ModeToggle } from "./ModeToggle";
 import { ImageEditPanel } from "./ImageEditPanel";
+import { PresetManager } from "./PresetManager";
 
 const Row = ({ label, value, unit, children, testid }) => (
   <div className="space-y-2" data-testid={testid}>
@@ -36,6 +37,10 @@ export const ConfigPanel = ({
   setEdits,
   hasImage,
   originalImg,
+  filaments,
+  setFilaments,
+  vibrancy,
+  setVibrancy,
 }) => {
   const update = (key, v) => setConfig((c) => ({ ...c, [key]: v }));
   const isPainting = config.render_mode === "painting";
@@ -46,6 +51,23 @@ export const ConfigPanel = ({
       className="h-full overflow-y-auto p-5 space-y-6"
       data-testid="config-panel"
     >
+      {setFilaments && (
+        <>
+          <PresetManager
+            config={config}
+            setConfig={setConfig}
+            filaments={filaments}
+            setFilaments={setFilaments}
+            edits={edits}
+            setEdits={setEdits}
+            vibrancy={vibrancy}
+            setVibrancy={setVibrancy}
+            disabled={disabled}
+          />
+          <div className="border-t border-zinc-800" />
+        </>
+      )}
+
       {hasImage && edits && setEdits && (
         <>
           <ImageEditPanel

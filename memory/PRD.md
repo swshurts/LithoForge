@@ -50,18 +50,39 @@
 - [x] Backend test suite: **17/17 passing** (health, filaments, upload,
       optimize, jobs, exports, geometry, legacy status)
 
+## Implemented (2026-02-14)
+- [x] Painting mode (reflective top-layer nearest-filament mapping)
+- [x] Image edit suite: brightness/contrast/saturation + interactive crop overlay (8 handles)
+- [x] Real-time histogram (R/G/B/luma) with clipping markers
+- [x] A/B compare slider (source vs render)
+- [x] Dynamic palette (1–8 filaments) with library picker
+- [x] AI palette suggestion with `Accurate / Balanced / Vibrant` modes
+- [x] Vibrant mode rewritten to use **hue-wheel angular coverage** (atan2(b*,a*))
+      weighted by chroma, replacing prior Lab-spread heuristic
+- [x] Cross-origin exports fixed via fetch → blob downloads
+- [x] **Max colour swaps slider now caps at 7** (was hard-locked at 5)
+- [x] **Crop overlay aspect-ratio lock**: hold `Shift` while dragging a corner
+      handle to preserve current rect aspect (in image-pixel space)
+- [x] **Preset Manager**: localStorage-backed presets capturing config + palette
+      + render mode + vibrancy. Ships with 3 built-ins (Portrait, Landscape,
+      Lithophane). Image edits intentionally excluded from presets.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG
 - Vectorised mesh / STL writer for large images (currently Python loop — slow for 512px meshes)
 - Bambu/Prusa-specific 3MF project metadata (real project_settings.config key names so slicers auto-set filaments)
 - Per-filament tune — optimise layer allocation via simulated annealing, not just histogram
-- Image pre-processing controls (brightness, contrast, levels, crop)
+- Soften step boundaries in Painting mode via median-filter pre-pass
 
 ### P2
 - Persist jobs to Mongo with TTL
 - Shareable link for a job (read-only preview + downloads)
-- Upload from URL / webcam
+- Per-filament "Usage %" column in Layer Allocation
+- Histogram channel toggles (R / G / B / Luma)
+- Auto-frame for Painting mode (bevelled matboard)
+- "Replace photo" button that preserves edits/palette/geometry
+- Refactor heavy `App.js` state into context/reducer
 - Multi-object build-plate composer
 - Printer profile presets (Bambu A1 / X1C, Prusa MK4, Voron)
 

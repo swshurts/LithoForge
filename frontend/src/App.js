@@ -209,6 +209,10 @@ export default function App() {
             setEdits={setEdits}
             hasImage={!!imageId}
             originalImg={originalImg}
+            filaments={filaments}
+            setFilaments={setFilaments}
+            vibrancy={vibrancy}
+            setVibrancy={setVibrancy}
           />
         </aside>
 
