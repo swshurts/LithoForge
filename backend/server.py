@@ -143,6 +143,32 @@ async def root():
     return {"message": "CMYKW Lithophane API"}
 
 
+class ClientErrorReport(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    message: str = ""
+    stack: str = ""
+    source: str = ""
+    line: int = 0
+    column: int = 0
+    user_agent: str = ""
+    url: str = ""
+    extra: Dict[str, Any] = {}
+
+
+@api_router.post("/client-error")
+async def client_error(body: ClientErrorReport):
+    """Capture uncaught client-side errors so we can debug iPad/Safari
+    failures without requiring screenshots from the user."""
+    logger.error(
+        "CLIENT_ERROR | ua=%s | url=%s | msg=%s | stack=%s",
+        body.user_agent[:120],
+        body.url[:160],
+        body.message[:400],
+        body.stack[:1500],
+    )
+    return {"ok": True}
+
+
 @api_router.get("/filaments/default")
 async def default_filaments():
     return {"filaments": [{"name": f.name, "hex": f.hex, "td": f.td}
