@@ -66,6 +66,24 @@
 - [x] **Preset Manager**: localStorage-backed presets capturing config + palette
       + render mode + vibrancy. Ships with 3 built-ins (Portrait, Landscape,
       Lithophane). Image edits intentionally excluded from presets.
+- [x] **Safari iPad hardening**: removed problematic `crossOrigin` on blob URLs,
+      Histogram canvas readback wrapped in try/catch, lazy original-image reload
+      from sourceUrl, pixel-loop fallback for browsers without `ctx.filter`
+      (Safari < 18), `willReadFrequently: true` for repeated readbacks.
+- [x] **Touch-friendly filament × delete**: was `opacity-0 group-hover:opacity-100`
+      (invisible on iPad → users couldn't remove palette colors). Now
+      always-visible at 70% opacity, hover-pops to 100%; 20×20 px target.
+- [x] **Remote error reporter** (`/api/client-error`) — captures uncaught JS
+      errors + React render errors with UA & URL for debugging without
+      requiring screenshots from the user.
+- [x] **React ErrorBoundary** — graceful "Try again" fallback so runtime
+      errors never blank the screen.
+- [x] **Mobile / touch shell** — viewport < 1280 px gets a single-column
+      layout: full-bleed viewport on top, fixed 2-tab bottom bar
+      (Setup / Palette & stats) opening half-height bottom sheets with the
+      respective panels. Desktop ≥ 1280 px keeps the original 3-column
+      control-room layout. JS-driven switch via `matchMedia` so panels
+      only mount once.
 
 ## Backlog
 ### P1

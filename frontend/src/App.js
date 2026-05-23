@@ -6,6 +6,7 @@ import { Viewport } from "@/components/Viewport";
 import { ConfigPanel } from "@/components/ConfigPanel";
 import { StatsPanel } from "@/components/StatsPanel";
 import { LayerTimeline } from "@/components/LayerTimeline";
+import { MobileShell } from "@/components/MobileShell";
 import {
   DEFAULT_EDITS,
   editsAreActive,
@@ -215,6 +216,73 @@ export default function App() {
     [imageId, filaments, uploading]
   );
 
+  // JS-driven responsive switch so panels only mount once. Tailwind's
+  // `hidden lg:grid` would render both trees, doubling state and effects
+  // (two histograms, two file inputs, etc.). Breakpoint set at 1280 so
+  // iPad landscape (1024) gets the comfortable touch layout too.
+  const [isDesktop, setIsDesktop] = React.useState(
+    typeof window !== "undefined" ? window.innerWidth >= 1280 : true
+  );
+  React.useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1280px)");
+    const update = (e) => setIsDesktop(e.matches);
+    setIsDesktop(mq.matches);
+    if (mq.addEventListener) mq.addEventListener("change", update);
+    else mq.addListener(update); // Safari < 14 fallback
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", update);
+      else mq.removeListener(update);
+    };
+  }, []);
+
+  const configPanelEl = (
+    <ConfigPanel
+      config={config}
+      setConfig={setConfig}
+      disabled={loading}
+      paletteLength={filaments.length}
+      edits={edits}
+      setEdits={setEdits}
+      hasImage={!!imageId}
+      originalImg={originalImg}
+      filaments={filaments}
+      setFilaments={setFilaments}
+      vibrancy={vibrancy}
+      setVibrancy={setVibrancy}
+    />
+  );
+
+  const viewportEl = (
+    <Viewport
+      onFile={handleFile}
+      sourceUrl={sourceUrl}
+      result={result}
+      loading={loading || uploading}
+      progressLabel={uploading ? "Uploading…" : progressLabel}
+      onReset={handleReset}
+      renderMode={config.render_mode}
+      edits={edits}
+      setEdits={setEdits}
+    />
+  );
+
+  const statsPanelEl = (
+    <StatsPanel
+      result={result}
+      filaments={filaments}
+      setFilaments={setFilaments}
+      maxActive={maxActive}
+      autoOrder={autoOrder}
+      setAutoOrder={setAutoOrder}
+      onSuggestPalette={handleSuggestPalette}
+      suggesting={suggesting}
+      canSuggest={!!imageId && !loading}
+      vibrancy={vibrancy}
+      setVibrancy={setVibrancy}
+      onPaletteSizeChange={handlePaletteSizeChange}
+    />
+  );
+
   return (
     <div className="App h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
       <Header
@@ -223,58 +291,30 @@ export default function App() {
         generating={loading}
       />
 
-      <div
-        className="flex-1 grid overflow-hidden"
-        style={{ gridTemplateColumns: "300px 1fr 340px" }}
-      >
-        <aside className="border-r border-zinc-800 overflow-hidden">
-          <ConfigPanel
-            config={config}
-            setConfig={setConfig}
-            disabled={loading}
-            paletteLength={filaments.length}
-            edits={edits}
-            setEdits={setEdits}
-            hasImage={!!imageId}
-            originalImg={originalImg}
-            filaments={filaments}
-            setFilaments={setFilaments}
-            vibrancy={vibrancy}
-            setVibrancy={setVibrancy}
+      {/* Desktop ≥ lg: 3-column control room */}
+      {isDesktop ? (
+        <div
+          className="grid flex-1 overflow-hidden"
+          style={{ gridTemplateColumns: "300px 1fr 340px" }}
+          data-testid="desktop-layout"
+        >
+          <aside className="border-r border-zinc-800 overflow-hidden">
+            {configPanelEl}
+          </aside>
+          <main className="overflow-hidden relative">{viewportEl}</main>
+          <aside className="border-l border-zinc-800 overflow-hidden">
+            {statsPanelEl}
+          </aside>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 overflow-hidden" data-testid="mobile-layout">
+          <MobileShell
+            viewport={viewportEl}
+            configPanel={configPanelEl}
+            statsPanel={statsPanelEl}
           />
-        </aside>
-
-        <main className="overflow-hidden relative">
-          <Viewport
-            onFile={handleFile}
-            sourceUrl={sourceUrl}
-            result={result}
-            loading={loading || uploading}
-            progressLabel={uploading ? "Uploading…" : progressLabel}
-            onReset={handleReset}
-            renderMode={config.render_mode}
-            edits={edits}
-            setEdits={setEdits}
-          />
-        </main>
-
-        <aside className="border-l border-zinc-800 overflow-hidden">
-          <StatsPanel
-            result={result}
-            filaments={filaments}
-            setFilaments={setFilaments}
-            maxActive={maxActive}
-            autoOrder={autoOrder}
-            setAutoOrder={setAutoOrder}
-            onSuggestPalette={handleSuggestPalette}
-            suggesting={suggesting}
-            canSuggest={!!imageId && !loading}
-            vibrancy={vibrancy}
-            setVibrancy={setVibrancy}
-            onPaletteSizeChange={handlePaletteSizeChange}
-          />
-        </aside>
-      </div>
+        </div>
+      )}
 
       <LayerTimeline
         timeline={result?.timeline}
