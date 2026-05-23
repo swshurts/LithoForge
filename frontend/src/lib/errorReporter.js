@@ -81,4 +81,43 @@ export const installErrorReporter = () => {
       column: 0,
     });
   });
+
+  // Intercept console.error — React calls this with the FULL error message
+  // and stack BEFORE the browser sanitizes the window.onerror event to
+  // "Script error.". This is our only reliable way to capture iPad Safari
+  // errors that happen inside event handlers, since CRA serves bundle.js
+  // without crossorigin="anonymous" and we can't change that without
+  // ejecting.
+  const orig = console.error.bind(console);
+  console.error = (...args) => {
+    try {
+      // Find the Error instance (React passes it as one of the args).
+      const errArg = args.find((a) => a instanceof Error);
+      const formatted = args
+        .map((a) => {
+          if (a instanceof Error) return `${a.name}: ${a.message}`;
+          if (typeof a === "string") return a;
+          try { return JSON.stringify(a).slice(0, 300); } catch { return String(a); }
+        })
+        .join(" | ");
+      // Skip noisy React dev warnings about deprecated APIs / keys etc.
+      const looksLikeReactWarning =
+        typeof args[0] === "string" &&
+        (args[0].startsWith("Warning:") ||
+          args[0].includes("validateDOMNesting") ||
+          args[0].includes("act("));
+      if (!looksLikeReactWarning) {
+        send({
+          message: `[console.error] ${formatted.slice(0, 500)}`,
+          stack: errArg?.stack || "",
+          source: "console.error",
+          line: 0,
+          column: 0,
+        });
+      }
+    } catch {
+      /* never break the original console.error path */
+    }
+    orig(...args);
+  };
 };
