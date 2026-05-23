@@ -40,6 +40,27 @@ const send = (payload) => {
   }
 };
 
+/**
+ * Wraps a callback so any synchronous error inside it is reported with
+ * full message + stack (Safari can't sanitize errors caught inside our
+ * own code the way it does cross-origin window.onerror events).
+ */
+export const safeCb = (label, fn) => (...args) => {
+  try {
+    return fn(...args);
+  } catch (e) {
+    send({
+      message: `[${label}] ${e?.message || e}`,
+      stack: e?.stack || "",
+      source: "safeCb",
+      line: 0,
+      column: 0,
+    });
+    // Re-throw so React/Radix can still handle it if they want.
+    throw e;
+  }
+};
+
 export const installErrorReporter = () => {
   window.addEventListener("error", (e) => {
     send({

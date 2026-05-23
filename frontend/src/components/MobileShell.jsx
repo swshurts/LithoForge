@@ -72,6 +72,13 @@ export const MobileShell = ({ viewport, configPanel, statsPanel }) => {
           side="bottom"
           className="h-[78vh] p-0 bg-zinc-950 border-zinc-800 rounded-none flex flex-col"
           data-testid="mobile-sheet"
+          // Safari iPad throws an uncaught "Script error." when Radix's
+          // default auto-focus fires while the slide-in animation is still
+          // in progress. Disabling autofocus on open/close removes the race
+          // — the user can tap controls inside the sheet immediately and
+          // the first interaction no longer crashes.
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
         >
           {active && (
             <>
