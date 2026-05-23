@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, HTTPException, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,6 +29,7 @@ from lithophane import (
 from palette_suggest import FILAMENT_LIBRARY, suggest_palette
 from auth import build_auth
 from presets import build_presets_router
+from jobs_history import build_jobs_router, persist_job, load_job, hydrate_in_memory_job
 
 
 ROOT_DIR = Path(__file__).parent
@@ -48,6 +49,11 @@ logger = logging.getLogger("lithophane")
 # heightmap + metadata so the user can request STL / 3MF exports on demand.
 JOBS: Dict[str, Dict[str, Any]] = {}
 UPLOADS: Dict[str, Image.Image] = {}
+
+# Build auth EARLY so route handlers below can use the optional / required
+# user dependencies. The actual routers are mounted at the bottom of this
+# file alongside the main api_router.
+auth_router, get_current_user_dep, require_user_dep = build_auth(db)
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +230,10 @@ async def upload(body: UploadIn):
 
 
 @api_router.post("/optimize", response_model=OptimizeOut)
-async def optimize_endpoint(body: OptimizeIn):
+async def optimize_endpoint(
+    body: OptimizeIn,
+    current_user=Depends(get_current_user_dep),
+):
     if body.image_id not in UPLOADS:
         raise HTTPException(status_code=404, detail="image_id not found")
     image = UPLOADS[body.image_id]
@@ -270,6 +279,32 @@ async def optimize_endpoint(body: OptimizeIn):
         "allocation": result.layer_allocation,
         "request": body.model_dump(),
     }
+
+    # Persist to user's job history if they're logged in. Failures here
+    # must never block the optimize response — anonymous users still get
+    # the in-memory path.
+    if current_user is not None:
+        try:
+            await persist_job(
+                db,
+                current_user.user_id,
+                job_id=job_id,
+                request=body.model_dump(),
+                filaments=result.filaments,
+                layer_map=result.layer_map,
+                layer_height_mm=result.layer_height_mm,
+                swap_heights_mm=result.swap_heights_mm,
+                swap_colors=result.swap_colors,
+                allocation=result.layer_allocation,
+                total_layers=result.total_layers,
+                delta_e_mean=result.delta_e_mean,
+                delta_e_p95=result.delta_e_p95,
+                preview_png_base64=preview,
+                heightmap_png_base64=heightmap,
+                timeline=timeline,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not persist job %s: %s", job_id, exc)
 
     return OptimizeOut(
         job_id=job_id,
@@ -324,8 +359,22 @@ def _build_export(job_id: str) -> Dict[str, Any]:
     return export
 
 
+async def _ensure_job_in_memory(job_id: str, current_user) -> None:
+    """For restored jobs from history: if the in-memory dict doesn't have
+    the job but the logged-in user owns it in MongoDB, hydrate it first
+    so /api/export/{id}/{kind} can serve the file."""
+    if job_id in JOBS:
+        return
+    if current_user is None:
+        return
+    stored = await load_job(db, current_user.user_id, job_id)
+    if stored is not None:
+        JOBS[job_id] = hydrate_in_memory_job(stored)
+
+
 @api_router.get("/export/{job_id}/stl")
-async def export_stl(job_id: str):
+async def export_stl(job_id: str, current_user=Depends(get_current_user_dep)):
+    await _ensure_job_in_memory(job_id, current_user)
     export = _build_export(job_id)
     return Response(
         content=export["stl"],
@@ -335,7 +384,8 @@ async def export_stl(job_id: str):
 
 
 @api_router.get("/export/{job_id}/swaps")
-async def export_swaps(job_id: str):
+async def export_swaps(job_id: str, current_user=Depends(get_current_user_dep)):
+    await _ensure_job_in_memory(job_id, current_user)
     export = _build_export(job_id)
     return Response(
         content=export["swap_txt"],
@@ -345,7 +395,8 @@ async def export_swaps(job_id: str):
 
 
 @api_router.get("/export/{job_id}/3mf")
-async def export_3mf(job_id: str):
+async def export_3mf(job_id: str, current_user=Depends(get_current_user_dep)):
+    await _ensure_job_in_memory(job_id, current_user)
     export = _build_export(job_id)
     return Response(
         content=export["threemf"],
@@ -376,11 +427,13 @@ async def get_status_checks():
 
 app.include_router(api_router)
 
-# Auth + per-user preset routers (mounted under /api).
-auth_router, _, require_user_dep = build_auth(db)
+# Mount the auth + per-user routers (built earlier so optimize endpoint
+# can use the optional-user dep).
 presets_router = build_presets_router(db, require_user_dep)
+jobs_router = build_jobs_router(db, require_user_dep, JOBS)
 app.include_router(auth_router, prefix="/api")
 app.include_router(presets_router, prefix="/api")
+app.include_router(jobs_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

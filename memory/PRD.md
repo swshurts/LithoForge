@@ -127,6 +127,30 @@
 - [x] App remains **NOT auth-gated** — every feature works anonymously;
       login is opt-in for cross-device preset sync.
 
+## Implemented (2026-02-23) — Platform: Job history + Help system
+- [x] **Per-user job persistence** — when a logged-in user runs
+      `/api/optimize`, the full result (config, palette, layer map,
+      preview, heightmap, timeline, ΔE stats) is saved to MongoDB
+      `jobs` collection. Layer maps are stored as base64-encoded NumPy
+      arrays so restored jobs can re-generate STL/3MF/swap exports.
+- [x] **`GET /api/my-jobs`** — list current user's jobs (latest 60),
+      returns small thumbnails (160px) for the history strip.
+- [x] **`GET /api/my-jobs/{id}`** — restore: hydrates the stored job back
+      into the in-memory JOBS dict so `/api/export` keeps working, and
+      returns the full optimize-shaped payload so the frontend can
+      rehydrate config + palette + viewport.
+- [x] **`DELETE /api/my-jobs/{id}`** — remove from history.
+- [x] **`JobHistory` component** in the right sidebar — 3-column
+      thumbnail grid with hover-revealed Restore / Delete buttons,
+      timestamp, ΔE summary. Auto-refreshes on `lithoforge:job-finished`
+      window event after each generate.
+- [x] **Viewport restore-aware** — accepts result-without-sourceUrl so
+      restored jobs show the rendered preview, ΔE stats, layer
+      allocation, and downloads immediately.
+- [x] **`HelpHint` component** — tap "?" button → click-outside-dismiss
+      popover. Mounted next to: Render Mode, Geometry, Print Limits,
+      AI Palette section.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

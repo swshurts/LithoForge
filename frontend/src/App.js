@@ -160,6 +160,8 @@ export default function App() {
       setProgressLabel("Matching pixels…");
       const data = await optimize(payload);
       setResult(data);
+      // Tell JobHistory to refresh so the newly-saved job appears.
+      window.dispatchEvent(new Event("lithoforge:job-finished"));
       toast.success(`Optimized · ΔE ${data.delta_e_mean.toFixed(2)}`);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Optimization failed");
@@ -209,6 +211,51 @@ export default function App() {
     } finally {
       setSuggesting(false);
     }
+  };
+
+  /**
+   * Restore a job from the user's cloud history. Hydrates the visible
+   * preview + downloads + config + palette without needing a re-upload.
+   */
+  const handleRestoreJob = (job) => {
+    const req = job.request || {};
+    setConfig((c) => ({
+      ...c,
+      width_mm: req.width_mm ?? c.width_mm,
+      height_mm: req.height_mm ?? c.height_mm,
+      thickness_mm: req.thickness_mm ?? c.thickness_mm,
+      border_mm: req.border_mm ?? c.border_mm,
+      layer_height_mm: req.layer_height_mm ?? c.layer_height_mm,
+      max_swaps: req.max_swaps ?? c.max_swaps,
+      geometry: req.geometry ?? c.geometry,
+      curve_radius_mm: req.curve_radius_mm ?? c.curve_radius_mm,
+      render_mode: req.render_mode ?? c.render_mode,
+      relief: req.relief ?? c.relief,
+    }));
+    if (job.filaments?.length) {
+      setFilaments(job.filaments);
+    }
+    // Surface the stored preview + downloads in the viewport. The job_id
+    // matches the existing in-memory hydrated job server-side so exports
+    // work the moment the user clicks Download.
+    setResult({
+      job_id: job.job_id,
+      preview_png_base64: job.preview_png_base64,
+      heightmap_png_base64: job.heightmap_png_base64,
+      delta_e_mean: job.delta_e_mean,
+      delta_e_p95: job.delta_e_p95,
+      total_layers: job.total_layers,
+      layer_allocation: job.allocation,
+      filaments: job.filaments,
+      swap_heights_mm: job.swap_heights_mm,
+      timeline: job.timeline,
+    });
+    // Reset source-image state so the viewport shows the restored render
+    // (not a stale upload from the current session).
+    setSourceUrl(null);
+    setImageId(null);
+    setOriginalImg(null);
+    originalImgRef.current = null;
   };
 
   const canGenerate = useMemo(
@@ -280,6 +327,7 @@ export default function App() {
       vibrancy={vibrancy}
       setVibrancy={setVibrancy}
       onPaletteSizeChange={handlePaletteSizeChange}
+      onRestoreJob={handleRestoreJob}
     />
   );
 

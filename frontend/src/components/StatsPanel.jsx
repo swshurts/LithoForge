@@ -1,6 +1,8 @@
 import React from "react";
 import { Download, FileBox, Layers, FileText, Wand2 } from "lucide-react";
 import { PaletteEditor } from "./PaletteEditor";
+import { JobHistory } from "./JobHistory";
+import { HelpHint } from "./HelpHint";
 import { exportUrl } from "../lib/api";
 
 const DeltaBadge = ({ label, value, accent }) => (
@@ -97,6 +99,7 @@ export const StatsPanel = ({
   vibrancy,
   setVibrancy,
   onPaletteSizeChange,
+  onRestoreJob,
 }) => {
   const q = result ? quality(result.delta_e_mean) : null;
 
@@ -106,6 +109,22 @@ export const StatsPanel = ({
       data-testid="stats-panel"
     >
       <div className="space-y-2">
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 flex items-center gap-1.5">
+            AI palette
+            <HelpHint title="Palette suggestion modes" testId="help-palette">
+              <strong className="text-zinc-200">Accurate</strong>: lowest
+              ΔE — best for muted, true-to-life photographs.
+              <br /><br />
+              <strong className="text-zinc-200">Balanced</strong>:
+              compromise between ΔE accuracy and saturated picks.
+              <br /><br />
+              <strong className="text-zinc-200">Vibrant</strong>: spreads
+              picks around the hue-wheel — best for posters, illustrations
+              and anything with bold primary colors.
+            </HelpHint>
+          </div>
+        </div>
         <div className="grid grid-cols-3 border border-zinc-800" data-testid="vibrancy-toggle">
           {[
             { id: 0.0, label: "Accurate" },
@@ -268,6 +287,13 @@ export const StatsPanel = ({
           </div>
         )}
       </div>
+
+      {/* My Jobs history — only renders when the user is logged in */}
+      {onRestoreJob && (
+        <div className="panel p-4 space-y-3">
+          <JobHistory onRestore={onRestoreJob} />
+        </div>
+      )}
     </div>
   );
 };

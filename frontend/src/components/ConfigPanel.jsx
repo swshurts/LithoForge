@@ -12,6 +12,7 @@ import { Input } from "./ui/input";
 import { ModeToggle } from "./ModeToggle";
 import { ImageEditPanel } from "./ImageEditPanel";
 import { PresetManager } from "./PresetManager";
+import { HelpHint } from "./HelpHint";
 
 const Row = ({ label, value, unit, children, testid }) => (
   <div className="space-y-2" data-testid={testid}>
@@ -81,8 +82,18 @@ export const ConfigPanel = ({
       )}
 
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3">
+        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3 flex items-center gap-1.5">
           Render mode
+          <HelpHint title="Lithophane vs Painting" testId="help-render-mode">
+            <strong className="text-zinc-200">Lithophane</strong> uses
+            Beer-Lambert subtractive mixing — colors emerge from light
+            passing through stacked translucent layers. Requires a
+            back-light to view properly.
+            <br /><br />
+            <strong className="text-zinc-200">Painting</strong> maps each
+            pixel to a single solid filament on top. No back-light needed,
+            high-contrast colors, but cannot mix to in-between hues.
+          </HelpHint>
         </div>
         <ModeToggle
           mode={config.render_mode}
@@ -99,8 +110,20 @@ export const ConfigPanel = ({
       <div className="border-t border-zinc-800" />
 
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3">
+        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3 flex items-center gap-1.5">
           Geometry
+          <HelpHint title="Geometry" testId="help-geometry">
+            <strong className="text-zinc-200">Width × Height</strong> set
+            the print's physical dimensions in mm.
+            <br /><br />
+            <strong className="text-zinc-200">Thickness</strong> is the
+            total Z height — more thickness = more layers = better color
+            depth (lithophane mode), but longer print time.
+            <br /><br />
+            <strong className="text-zinc-200">Shape</strong>: flat works
+            for any printer; curved/cylindrical require the matching
+            print bed orientation.
+          </HelpHint>
         </div>
         <div className="space-y-4">
           <div>
@@ -227,8 +250,22 @@ export const ConfigPanel = ({
       <div className="border-t border-zinc-800" />
 
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3">
+        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500 mb-3 flex items-center gap-1.5">
           Print limits
+          <HelpHint title="Layer height & swaps" testId="help-print-limits">
+            <strong className="text-zinc-200">Layer height</strong>:
+            thinner layers = better color resolution & smoother gradients
+            but much longer print time.
+            <br /><br />
+            <strong className="text-zinc-200">Max colour swaps</strong>:
+            how many times the printer changes filament during the print.
+            Every swap adds purge waste; lower = faster prints but
+            coarser color. Most printers cap at 8 swaps before purge
+            tower height becomes a problem.
+            <br /><br />
+            <strong className="text-zinc-200">Relief</strong> (Painting
+            mode): 0 = flat plateaus, 100 = full luminance bas-relief.
+          </HelpHint>
         </div>
         <div className="space-y-4">
           <div>

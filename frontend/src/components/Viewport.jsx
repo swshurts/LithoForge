@@ -56,7 +56,7 @@ export const Viewport = ({
     if (result && view === "original") setView("preview");
   }, [result]); // eslint-disable-line
 
-  if (!sourceUrl) {
+  if (!sourceUrl && !result) {
     return (
       <div className="relative h-full">
         <UploadZone onFile={onFile} />
