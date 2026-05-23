@@ -27,6 +27,8 @@ from lithophane import (
     rendered_to_png_bytes,
 )
 from palette_suggest import FILAMENT_LIBRARY, suggest_palette
+from auth import build_auth
+from presets import build_presets_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -373,10 +375,17 @@ async def get_status_checks():
 
 
 app.include_router(api_router)
+
+# Auth + per-user preset routers (mounted under /api).
+auth_router, _, require_user_dep = build_auth(db)
+presets_router = build_presets_router(db, require_user_dep)
+app.include_router(auth_router, prefix="/api")
+app.include_router(presets_router, prefix="/api")
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_origins=os.environ.get("CORS_ORIGINS", "").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )

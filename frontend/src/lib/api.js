@@ -3,7 +3,10 @@ import axios from "axios";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
 
-export const api = axios.create({ baseURL: API });
+// withCredentials makes axios include the session_token cookie on every
+// request. Endpoints that don't need it (anonymous public ones like
+// /upload, /optimize) work fine with the cookie present too.
+export const api = axios.create({ baseURL: API, withCredentials: true });
 
 export const fileToBase64 = (file) =>
   new Promise((resolve, reject) => {
@@ -47,3 +50,23 @@ export const getFilamentLibrary = async () => {
 };
 
 export const exportUrl = (jobId, kind) => `${API}/export/${jobId}/${kind}`;
+
+// --- Cloud presets (authenticated) ----------------------------------
+export const listCloudPresets = async () => {
+  const { data } = await api.get("/presets", { withCredentials: true });
+  return data;
+};
+
+export const createCloudPreset = async (preset) => {
+  const { data } = await api.post("/presets", preset, { withCredentials: true });
+  return data;
+};
+
+export const deleteCloudPreset = async (presetId) => {
+  await api.delete(`/presets/${presetId}`, { withCredentials: true });
+};
+
+export const importCloudPresets = async (presets) => {
+  const { data } = await api.post("/presets/import", presets, { withCredentials: true });
+  return data;
+};

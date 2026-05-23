@@ -1,5 +1,6 @@
 import React from "react";
 import { Zap, Cpu, Github } from "lucide-react";
+import { UserMenu } from "./UserMenu";
 
 export const Header = ({ onGenerate, canGenerate, generating }) => {
   return (
@@ -46,6 +47,7 @@ export const Header = ({ onGenerate, canGenerate, generating }) => {
           <Github className="w-3.5 h-3.5" strokeWidth={1.5} />
           Docs
         </a>
+        <UserMenu />
         <button
           data-testid="generate-btn"
           disabled={!canGenerate || generating}

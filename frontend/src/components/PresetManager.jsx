@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Bookmark, Save, Trash2, ChevronDown } from "lucide-react";
+import { Bookmark, Save, Trash2, Cloud } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -11,6 +11,13 @@ import {
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { DEFAULT_EDITS } from "./ImageEditPanel";
+import {
+  createCloudPreset,
+  deleteCloudPreset,
+  importCloudPresets,
+  listCloudPresets,
+} from "../lib/api";
+import { useAuth } from "../lib/auth";
 
 const STORAGE_KEY = "lithoforge.presets.v1";
 const PRESET_VERSION = 1;
@@ -136,21 +143,95 @@ export const PresetManager = ({
   setVibrancy,
   disabled,
 }) => {
-  const [userPresets, setUserPresets] = useState(loadUserPresets);
+  const { user } = useAuth();
+  const isLoggedIn = !!user;
+
+  const [localPresets, setLocalPresets] = useState(loadUserPresets);
+  const [cloudPresets, setCloudPresets] = useState([]);
   const [showSave, setShowSave] = useState(false);
   const [name, setName] = useState("");
   const [selectedId, setSelectedId] = useState("");
   // Skip the very first effect call so we don't write an empty array to
   // localStorage on mount — Safari Private Browsing throws on setItem.
   const persistedOnce = React.useRef(false);
+  const importedRef = React.useRef(false);
 
   useEffect(() => {
     if (!persistedOnce.current) {
       persistedOnce.current = true;
       return;
     }
-    saveUserPresets(userPresets);
-  }, [userPresets]);
+    saveUserPresets(localPresets);
+  }, [localPresets]);
+
+  // When the user logs in, fetch their cloud presets AND offer to migrate
+  // any anonymous-mode localStorage presets they've already saved.
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setCloudPresets([]);
+      importedRef.current = false;
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const cloud = await listCloudPresets();
+        if (cancelled) return;
+        const mapped = cloud.map((p) => ({
+          id: p.preset_id,
+          name: p.name,
+          builtin: false,
+          cloud: true,
+          vibrancy: p.vibrancy,
+          config: p.config,
+          filaments: p.filaments,
+        }));
+        setCloudPresets(mapped);
+        // One-shot import: push any localStorage presets up to the cloud
+        // the first time this user logs in on this device.
+        if (!importedRef.current && localPresets.length > 0) {
+          importedRef.current = true;
+          const payload = localPresets.map((p) => ({
+            name: p.name,
+            config: p.config,
+            filaments: p.filaments,
+            vibrancy: p.vibrancy,
+          }));
+          try {
+            const imported = await importCloudPresets(payload);
+            if (imported.length > 0) {
+              setCloudPresets((cur) => [
+                ...cur,
+                ...imported.map((p) => ({
+                  id: p.preset_id,
+                  name: p.name,
+                  builtin: false,
+                  cloud: true,
+                  vibrancy: p.vibrancy,
+                  config: p.config,
+                  filaments: p.filaments,
+                })),
+              ]);
+              toast.success(
+                `Imported ${imported.length} local preset${
+                  imported.length === 1 ? "" : "s"
+                } to your account`
+              );
+            }
+          } catch {
+            /* silent — user can re-save manually if needed */
+          }
+        }
+      } catch {
+        /* ignore — cloud load failures shouldn't break the local UX */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, localPresets]);
+
+  const userPresets = isLoggedIn ? cloudPresets : localPresets;
 
   const allPresets = useMemo(
     () => [...BUILTIN_PRESETS, ...userPresets],
@@ -162,9 +243,6 @@ export const PresetManager = ({
     setConfig({ ...preset.config });
     setFilaments(preset.filaments.map((f) => ({ ...f })));
     setVibrancy(typeof preset.vibrancy === "number" ? preset.vibrancy : 0.5);
-    // Edits are intentionally not part of presets — they belong to the
-    // current photo, not the print recipe. Reset them so the loaded
-    // preset doesn't fight an unrelated crop/brightness from earlier.
     if (setEdits) setEdits({ ...DEFAULT_EDITS });
     toast.success(`Loaded preset · ${preset.name}`);
   };
@@ -175,7 +253,7 @@ export const PresetManager = ({
     apply(preset);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
       toast.error("Name your preset first");
@@ -185,28 +263,64 @@ export const PresetManager = ({
       toast.error("A preset with that name already exists");
       return;
     }
-    const preset = {
-      id: `user-${Date.now()}`,
+    const payload = {
       name: trimmed,
-      builtin: false,
       vibrancy,
       config: { ...config },
       filaments: filaments.map((f) => ({ ...f })),
     };
-    setUserPresets((cur) => [...cur, preset]);
-    setSelectedId(preset.id);
+    if (isLoggedIn) {
+      try {
+        const created = await createCloudPreset(payload);
+        const preset = {
+          id: created.preset_id,
+          name: created.name,
+          builtin: false,
+          cloud: true,
+          vibrancy: created.vibrancy,
+          config: created.config,
+          filaments: created.filaments,
+        };
+        setCloudPresets((cur) => [preset, ...cur]);
+        setSelectedId(preset.id);
+        toast.success(`Saved preset · ${trimmed} (synced)`);
+      } catch (e) {
+        toast.error(e?.response?.data?.detail || "Could not save preset");
+        return;
+      }
+    } else {
+      const preset = {
+        id: `user-${Date.now()}`,
+        name: trimmed,
+        builtin: false,
+        cloud: false,
+        ...payload,
+      };
+      setLocalPresets((cur) => [...cur, preset]);
+      setSelectedId(preset.id);
+      toast.success(`Saved preset · ${trimmed}`);
+    }
     setName("");
     setShowSave(false);
-    toast.success(`Saved preset · ${trimmed}`);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     const preset = userPresets.find((p) => p.id === selectedId);
     if (!preset) {
       toast.error("Pick one of your own presets to delete");
       return;
     }
-    setUserPresets((cur) => cur.filter((p) => p.id !== selectedId));
+    if (preset.cloud) {
+      try {
+        await deleteCloudPreset(preset.id);
+        setCloudPresets((cur) => cur.filter((p) => p.id !== preset.id));
+      } catch {
+        toast.error("Could not delete preset");
+        return;
+      }
+    } else {
+      setLocalPresets((cur) => cur.filter((p) => p.id !== preset.id));
+    }
     setSelectedId("");
     toast.success(`Deleted preset · ${preset.name}`);
   };
@@ -220,6 +334,15 @@ export const PresetManager = ({
         <Label className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 flex items-center gap-1.5">
           <Bookmark className="w-3 h-3" />
           Presets
+          {isLoggedIn && (
+            <span
+              className="inline-flex items-center gap-0.5 text-[8px] tracking-[0.12em] text-emerald-400/80 normal-case"
+              title="Synced to your account"
+            >
+              <Cloud className="w-2.5 h-2.5" strokeWidth={2} />
+              synced
+            </span>
+          )}
         </Label>
         <button
           data-testid="preset-save-toggle"

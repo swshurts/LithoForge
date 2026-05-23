@@ -103,6 +103,29 @@
       `pointercancel`. Touch-action: none on handles & rect to keep
       iOS from intercepting drags as scrolls. Crop overlay is hidden when
       the viewport is zoomed to avoid gesture conflicts.
+- [x] **Disk-cache poisoning fix** — added `setupProxy.js` that sends
+      `Cache-Control: no-store, no-cache, must-revalidate` headers so
+      popped-out Safari tabs always get the latest bundle.
+
+## Implemented (2026-02-23) — Platform: Emergent-managed Google Auth
+- [x] **`/api/auth/session`** — exchanges OAuth session_id for a
+      persisted session_token, upserts the user, sets a secure httpOnly
+      cookie with SameSite=None.
+- [x] **`/api/auth/me`** — returns current user or 401.
+- [x] **`/api/auth/logout`** — invalidates the session and clears cookie.
+- [x] **MongoDB collections**: `users`, `user_sessions`, `presets`.
+- [x] **`/api/presets`** GET/POST/DELETE + `/api/presets/import` — per-user
+      cloud preset storage with one-shot localStorage import on first login.
+- [x] **Frontend `AuthProvider`** + `useAuth()` hook + `AuthCallbackHandler`
+      that strips `#session_id=…` after OAuth return.
+- [x] **`UserMenu`** in header — Sign In button when anonymous; avatar +
+      name + dropdown (email, sync status, Sign Out) when logged in.
+- [x] **`PresetManager` upgraded** — dual-source: localStorage for
+      anonymous users, MongoDB-backed cloud presets for logged-in users.
+      One-shot migration of local presets to cloud on first login.
+      "✓synced" badge next to the Presets label when authenticated.
+- [x] App remains **NOT auth-gated** — every feature works anonymously;
+      login is opt-in for cross-device preset sync.
 
 ## Backlog
 ### P1
