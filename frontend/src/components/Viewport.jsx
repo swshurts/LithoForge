@@ -4,6 +4,7 @@ import { UploadZone } from "./UploadZone";
 import { editsToCssFilter, editsToClipPath, editsAreActive } from "./ImageEditPanel";
 import { CropOverlay } from "./CropOverlay";
 import { CompareSlider } from "./CompareSlider";
+import { ZoomPanView } from "./ZoomPanView";
 
 const ViewTabs = ({ active, setActive, hasResult }) => (
   <div
@@ -48,6 +49,7 @@ export const Viewport = ({
   setEdits,
 }) => {
   const [view, setView] = useState("preview");
+  const [zoomed, setZoomed] = useState(false);
   const imgWrapRef = useRef(null);
 
   useEffect(() => {
@@ -122,44 +124,50 @@ export const Viewport = ({
             rightLabel={renderMode === "painting" ? "PAINTED" : "LITHOPHANE"}
           />
         ) : (
-          <div
-            ref={imgWrapRef}
-            className="relative border border-zinc-800 max-h-full max-w-full inline-block"
-            data-testid="viewport-image-wrap"
+          <ZoomPanView
+            resetKey={`${view}-${sourceUrl}`}
+            onZoomChange={setZoomed}
           >
-            <img
-              src={previewSrc}
-              alt="lithophane"
-              className="block max-h-[70vh] max-w-full object-contain"
-              data-testid="viewport-image"
-              style={{
-                filter: filterStyle,
-                clipPath: clipStyle,
-                ...(view === "heightmap"
-                  ? { imageRendering: "pixelated" }
-                  : {}),
-              }}
-            />
-            {liveEdit && setEdits && (
-              <CropOverlay
-                edits={edits}
-                setEdits={setEdits}
-                containerRef={imgWrapRef}
+            <div
+              ref={imgWrapRef}
+              className="relative border border-zinc-800 max-h-full max-w-full inline-block mx-auto"
+              data-testid="viewport-image-wrap"
+            >
+              <img
+                src={previewSrc}
+                alt="lithophane"
+                className="block max-h-[70vh] max-w-full object-contain"
+                data-testid="viewport-image"
+                draggable={false}
+                style={{
+                  filter: filterStyle,
+                  clipPath: clipStyle,
+                  ...(view === "heightmap"
+                    ? { imageRendering: "pixelated" }
+                    : {}),
+                }}
               />
-            )}
-            {view === "preview" && result && (
-              <div className="absolute top-2 left-2 font-mono text-[9px] tracking-[0.2em] text-zinc-300 bg-black/60 px-2 py-0.5 border border-white/10">
-                {renderMode === "painting"
-                  ? "PAINT PREVIEW · NEAREST-FILAMENT MAPPING"
-                  : "SIMULATED BACKLIT OUTPUT"}
-              </div>
-            )}
-            {view === "heightmap" && (
-              <div className="absolute top-2 left-2 font-mono text-[9px] tracking-[0.2em] text-zinc-300 bg-black/60 px-2 py-0.5 border border-white/10">
-                HEIGHT MAP · BRIGHTER = THICKER
-              </div>
-            )}
-          </div>
+              {liveEdit && setEdits && !zoomed && (
+                <CropOverlay
+                  edits={edits}
+                  setEdits={setEdits}
+                  containerRef={imgWrapRef}
+                />
+              )}
+              {view === "preview" && result && (
+                <div className="absolute top-2 left-2 font-mono text-[9px] tracking-[0.2em] text-zinc-300 bg-black/60 px-2 py-0.5 border border-white/10">
+                  {renderMode === "painting"
+                    ? "PAINT PREVIEW · NEAREST-FILAMENT MAPPING"
+                    : "SIMULATED BACKLIT OUTPUT"}
+                </div>
+              )}
+              {view === "heightmap" && (
+                <div className="absolute top-2 left-2 font-mono text-[9px] tracking-[0.2em] text-zinc-300 bg-black/60 px-2 py-0.5 border border-white/10">
+                  HEIGHT MAP · BRIGHTER = THICKER
+                </div>
+              )}
+            </div>
+          </ZoomPanView>
         )}
       </div>
 

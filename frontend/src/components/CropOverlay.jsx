@@ -117,11 +117,16 @@ export const CropOverlay = ({ edits, setEdits, containerRef }) => {
       setEdits(next);
     };
     const up = () => setDrag(null);
-    document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", up);
+    // Pointer events cover mouse, touch & pen across all browsers — the
+    // previous mouse-only handlers meant the crop overlay didn't work on
+    // iPad at all.
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
     return () => {
-      document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", up);
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
     };
   }, [drag, containerRef, setEdits]);
 
@@ -185,9 +190,9 @@ export const CropOverlay = ({ edits, setEdits, containerRef }) => {
 
       {/* crop rect — draggable to move */}
       <div
-        onMouseDown={onDown("move")}
+        onPointerDown={onDown("move")}
         data-testid="crop-rect"
-        className="absolute border border-zinc-100/80 cursor-move pointer-events-auto"
+        className="absolute border border-zinc-100/80 cursor-move pointer-events-auto touch-none"
         style={{
           left: `${l}%`,
           top: `${t}%`,
@@ -212,8 +217,8 @@ export const CropOverlay = ({ edits, setEdits, containerRef }) => {
           <div
             key={h0.id}
             data-testid={`crop-handle-${h0.id}`}
-            onMouseDown={onDown(h0.id)}
-            className="absolute w-3 h-3 bg-zinc-100 border border-zinc-900 pointer-events-auto"
+            onPointerDown={onDown(h0.id)}
+            className="absolute w-4 h-4 bg-zinc-100 border border-zinc-900 pointer-events-auto touch-none"
             style={{
               left: `${x}%`,
               top: `${y}%`,

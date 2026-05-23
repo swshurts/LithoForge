@@ -84,6 +84,25 @@
       respective panels. Desktop ≥ 1280 px keeps the original 3-column
       control-room layout. JS-driven switch via `matchMedia` so panels
       only mount once.
+- [x] **Mobile sheet first-touch crash** — Radix Dialog auto-focused the
+      first focusable element inside the sheet while the slide-in animation
+      was still playing; Safari iPad threw an uncaught error sanitized to
+      "Script error." on `window.onerror`. Fixed by `onOpenAutoFocus={e =>
+      e.preventDefault()}` + `onCloseAutoFocus={e => e.preventDefault()}`
+      on `SheetContent`.
+- [x] **Pinch-to-zoom + pan viewport** — `ZoomPanView` wraps the image:
+      2-finger pinch (or ctrl/cmd + wheel) zooms 1× – 5×, 1-finger drag
+      pans when zoomed, double-tap / double-click resets. Pan bounds keep
+      the image at least partially visible. Touch-action: none while
+      zoomed prevents iOS Safari native page-zoom from hijacking the
+      gesture. Wheel listener attached via native `addEventListener` with
+      `passive: false` so `preventDefault` actually works.
+- [x] **CropOverlay rewritten with pointer events** — previously used
+      mouse events only and silently failed on iPad. Now uses
+      `onPointerDown` + document-level `pointermove`/`pointerup`/
+      `pointercancel`. Touch-action: none on handles & rect to keep
+      iOS from intercepting drags as scrolls. Crop overlay is hidden when
+      the viewport is zoomed to avoid gesture conflicts.
 
 ## Backlog
 ### P1
