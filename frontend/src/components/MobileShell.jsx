@@ -1,16 +1,13 @@
 import React, { useState } from "react";
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-  SheetDescription,
-} from "./ui/sheet";
-import { Sliders, Palette } from "lucide-react";
+import { Sliders, Palette, X } from "lucide-react";
 
 /**
- * Bottom-tab + sheet layout for touch devices (< lg).
- * Renders the viewport full-screen with a fixed bottom toolbar that
- * pulls up Config / Palette as half-height bottom sheets.
+ * Bottom-tab + slide-up panel layout for touch devices (< lg).
+ *
+ * Deliberately avoids Radix Dialog / Sheet because their portal + focus-
+ * trap behaviour throws sanitized "Script error." entries on Safari iPad
+ * when controls are touched mid-animation. We use a plain fixed div
+ * instead — same visual effect, no portal magic.
  */
 export const MobileShell = ({ viewport, configPanel, statsPanel }) => {
   const [open, setOpen] = useState(null); // 'config' | 'palette' | null
@@ -22,7 +19,6 @@ export const MobileShell = ({ viewport, configPanel, statsPanel }) => {
       icon: Sliders,
       content: configPanel,
       title: "Setup · geometry & image edits",
-      description: "Presets, crop, brightness, dimensions & swap count.",
     },
     {
       id: "palette",
@@ -30,20 +26,19 @@ export const MobileShell = ({ viewport, configPanel, statsPanel }) => {
       icon: Palette,
       content: statsPanel,
       title: "Palette · stats · export",
-      description: "Filaments, ΔE fidelity, layer allocation & downloads.",
     },
   ];
 
   const active = tabs.find((t) => t.id === open) || null;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
       {/* viewport takes all remaining height */}
       <div className="flex-1 min-h-0 overflow-hidden">{viewport}</div>
 
       {/* fixed bottom tab bar */}
       <div
-        className="flex border-t border-zinc-800 bg-zinc-950"
+        className="flex border-t border-zinc-800 bg-zinc-950 relative z-30"
         data-testid="mobile-tab-bar"
       >
         {tabs.map((t) => {
@@ -67,38 +62,45 @@ export const MobileShell = ({ viewport, configPanel, statsPanel }) => {
         })}
       </div>
 
-      <Sheet open={open !== null} onOpenChange={(v) => !v && setOpen(null)}>
-        <SheetContent
-          side="bottom"
-          className="h-[78vh] p-0 bg-zinc-950 border-zinc-800 rounded-none flex flex-col"
-          data-testid="mobile-sheet"
-          // Safari iPad throws an uncaught "Script error." when Radix's
-          // default auto-focus fires while the slide-in animation is still
-          // in progress. Disabling autofocus on open/close removes the race
-          // — the user can tap controls inside the sheet immediately and
-          // the first interaction no longer crashes.
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          onCloseAutoFocus={(e) => e.preventDefault()}
-        >
-          {active && (
-            <>
-              <div className="border-b border-zinc-800 px-5 py-3 flex items-center justify-between flex-shrink-0">
-                <div>
-                  <SheetTitle className="font-mono text-[11px] uppercase tracking-[0.22em] text-zinc-100">
-                    {active.title}
-                  </SheetTitle>
-                  <SheetDescription className="font-mono text-[9px] text-zinc-600 tracking-[0.1em] mt-0.5">
-                    {active.description}
-                  </SheetDescription>
-                </div>
+      {/* Backdrop */}
+      {active && (
+        <div
+          onClick={() => setOpen(null)}
+          className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm"
+          data-testid="mobile-backdrop"
+          aria-hidden
+        />
+      )}
+
+      {/* Slide-up panel — plain absolutely-positioned div, no Radix Dialog */}
+      <div
+        className={`fixed left-0 right-0 bottom-0 z-50 bg-zinc-950 border-t border-zinc-800 transition-transform duration-300 ease-out ${
+          active ? "translate-y-0" : "translate-y-full pointer-events-none"
+        }`}
+        style={{ height: "78vh" }}
+        data-testid="mobile-sheet"
+      >
+        {active && (
+          <div className="flex flex-col h-full">
+            <div className="border-b border-zinc-800 px-5 py-3 flex items-center justify-between flex-shrink-0">
+              <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-zinc-100">
+                {active.title}
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto">
-                {active.content}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+              <button
+                onClick={() => setOpen(null)}
+                aria-label="Close"
+                data-testid="mobile-sheet-close"
+                className="w-8 h-8 flex items-center justify-center border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-600 transition-colors"
+              >
+                <X className="w-4 h-4" strokeWidth={1.5} />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {active.content}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

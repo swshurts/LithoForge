@@ -4,6 +4,10 @@
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 const ENDPOINT = `${BACKEND}/api/client-error`;
+// Bump this whenever errorReporter changes so we can tell from the
+// backend log which build a given report came from (helps detect Safari
+// cache issues where users still run an old bundle).
+const REPORTER_VERSION = "v4-2026-02-23-console-intercept";
 
 let lastSig = "";
 let lastTime = 0;
@@ -19,6 +23,7 @@ const send = (payload) => {
   try {
     const body = JSON.stringify({
       ...payload,
+      reporter_version: REPORTER_VERSION,
       user_agent: navigator.userAgent,
       url: window.location.href,
     });

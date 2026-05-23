@@ -152,6 +152,7 @@ class ClientErrorReport(BaseModel):
     column: int = 0
     user_agent: str = ""
     url: str = ""
+    reporter_version: str = "unknown"
     extra: Dict[str, Any] = {}
 
 
@@ -160,7 +161,8 @@ async def client_error(body: ClientErrorReport):
     """Capture uncaught client-side errors so we can debug iPad/Safari
     failures without requiring screenshots from the user."""
     logger.error(
-        "CLIENT_ERROR | ua=%s | url=%s | msg=%s | stack=%s",
+        "CLIENT_ERROR | rv=%s | ua=%s | url=%s | msg=%s | stack=%s",
+        body.reporter_version,
         body.user_agent[:120],
         body.url[:160],
         body.message[:400],
