@@ -56,10 +56,11 @@ const Swatch = ({
               onDelete(idx);
             }}
             data-testid={`delete-filament-${filament.name.toLowerCase()}`}
+            aria-label={`Remove ${filament.name}`}
             title={`Remove ${filament.name}`}
-            className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center bg-zinc-950 text-zinc-300 border border-zinc-700 hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors duration-150 opacity-0 group-hover:opacity-100"
+            className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center bg-zinc-950 text-zinc-300 border border-zinc-700 hover:bg-red-600 hover:text-white hover:border-red-600 active:bg-red-600 active:text-white transition-colors duration-150 opacity-70 hover:opacity-100"
           >
-            <X className="w-2.5 h-2.5" strokeWidth={2.5} />
+            <X className="w-3 h-3" strokeWidth={2.5} />
           </button>
         )}
       </div>
