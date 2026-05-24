@@ -267,24 +267,17 @@ def write_stl_binary(vertices: np.ndarray, faces: np.ndarray) -> bytes:
 # ---------------------------------------------------------------------------
 
 def _build_slic3r_family_snippet(
-    layer_indices: List[int], multi_tool: bool = False
+    layer_indices: List[int],
+    profile: Optional[PrinterProfile] = None,
 ) -> str:
     """Conditional layer-change blocks for PrusaSlicer / SuperSlicer /
-    OrcaSlicer / Bambu Studio. Paste into:
-        Printer Settings → Custom G-code → Before layer change G-code
-
-    Multi-tool printers emit `T<n>` tool changes (no manual pause);
-    single-extruder printers emit `M600` filament-change pauses."""
+    OrcaSlicer / Bambu Studio. Delegates to printers.build_layer_change_gcode
+    so the AMS-slot clamping logic stays in one place."""
     if not layer_indices:
         return "; no colour swaps in this print\n"
-    if multi_tool:
-        parts = [
-            f"{{if layer_num == {idx}}}T{slot + 1}{{endif}}"
-            for slot, idx in enumerate(layer_indices)
-        ]
-    else:
-        parts = [f"{{if layer_num == {idx}}}M600{{endif}}" for idx in layer_indices]
-    return "\n".join(parts) + "\n"
+    if profile is None:
+        profile = get_profile("generic_orca")
+    return build_layer_change_gcode(profile, layer_indices) + "\n"
 
 
 def _build_cura_postprocess_note(
@@ -373,7 +366,7 @@ def build_swap_instructions(
         "; ====================================================================="
     )
     lines.append(
-        _build_slic3r_family_snippet(swap_layer_indices, multi_tool).rstrip()
+        _build_slic3r_family_snippet(swap_layer_indices, profile).rstrip()
     )
 
     lines.append("")

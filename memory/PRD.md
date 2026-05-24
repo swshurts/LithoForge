@@ -182,6 +182,48 @@
       `/creator/:id`.
 - [x] **Tests**: 5 new marketplace tests + 17 existing = 22/22 passing.
 
+## Implemented (2026-02-25) — Printer catalog + licensing + buyer override + Resend scaffold + painting smoothing
+
+- [x] **Printer profile catalog (`printers.py`)** — 18 profiles organized
+      by SLICER FAMILY (OrcaSlicer / PrusaSlicer / SuperSlicer / Cura /
+      Marlin) so any printer that runs Orca shows up under one umbrella.
+      Includes Bambu A1 mini / A1 / P1S / X1C, Sovol SV07 / SV08,
+      Elegoo Neptune 4 / Centauri Carbon, Anycubic Kobra 2, Creality K1,
+      Flashforge Adventurer 5M (3MF-only), Prusa MK4 / MINI+ / XL,
+      Voron 2.4, Ultimaker S3, plus two generics.
+- [x] Per-printer flags: bed_x_mm/bed_y_mm, default layer height,
+      `multi_tool` (drives `T<n>` vs `M600`), `supported_formats`.
+- [x] **`GET /api/printers`** returns the catalog;
+      **`GET /api/printers/{id}/fit?width_mm=&height_mm=`** reports
+      whether a design fits on that printer's bed (5 mm safety margin).
+- [x] **Multi-tool / AMS auto-pause flavour** — `build_layer_change_gcode`
+      emits `T1 T2 T3` for AMS-style printers and `M600` for
+      single-extruder. **AMS-slot overflow safety**: 5th+ swap on a
+      4-lane AMS falls back to `M600 ; out of AMS slots` so the printer
+      never errors trying to switch to a non-existent tool.
+- [x] **Creator picks printer at generate time** — `OptimizeIn.printer_id`;
+      ConfigPanel shows a "Target printer" grouped dropdown above Shape.
+- [x] **License field on every listing** — `ListingIn.license` with 8
+      presets (All Rights Reserved, Personal Use Only, CC0, CC-BY,
+      CC-BY-SA, CC-BY-NC, CC-BY-NC-SA, CC-BY-ND). Surfaced on the
+      Publish dialog + the listing detail page + embedded in the 3MF
+      `cmykw_license` field.
+- [x] **Buyer override on purchase-success page** — `PrinterSelect`
+      lets the buyer regenerate the STL/3MF/swaps for their own printer
+      via `/api/export/{id}/{kind}?printer=…&token=…`. **Bed-fit
+      warning** flashes if the design exceeds the buyer's chosen bed.
+- [x] **Resend email scaffold (`email_service.py`)** — sends a
+      transactional "your lithophane is ready" email with tokenized
+      download links the moment payment_status becomes paid (both
+      polling + webhook paths). No-ops gracefully when
+      `RESEND_API_KEY` is the placeholder so checkout still works.
+- [x] **Painting-mode chromatic simplification** — new `smoothing`
+      slider (0..1) applies a Lab-space median pre-pass before
+      nearest-filament matching, softening the speckled boundaries
+      between filament zones on continuous photos.
+- [x] **Tests**: +5 printer tests (catalog, fit, creator printer,
+      buyer override, AMS overflow). Total **37/37 backend pytest pass**.
+
 ## Implemented (2026-02-24) — Auto-pause slicer integration (Option B + C)
 - [x] **3MF auto-pause** (Option B): `Metadata/project_settings.config`
       now embeds `before_layer_change_gcode` + `layer_change_gcode`

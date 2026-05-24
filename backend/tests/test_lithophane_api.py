@@ -366,7 +366,8 @@ class TestPrinters:
 
     def test_export_3mf_picks_up_creator_printer(self, client, uploaded):
         # Creator chose a multi-tool Bambu X1C → 3MF should embed T<n>
-        # tool changes, not M600.
+        # tool changes, not M600. Use max_swaps=3 so all 3 swaps fit
+        # within the 4-lane AMS (T1, T2, T3) without overflowing.
         body = {
             "image_id": uploaded["image_id"],
             "width_mm": 100.0,
@@ -374,7 +375,7 @@ class TestPrinters:
             "thickness_mm": 3.0,
             "border_mm": 2.0,
             "layer_height_mm": 0.12,
-            "max_swaps": 4,
+            "max_swaps": 3,
             "geometry": "flat",
             "printer_id": "bambu_x1c",
             "license": "CC-BY-NC",
@@ -399,11 +400,17 @@ class TestPrinters:
     def test_buyer_override_switches_printer(self, client, optimized):
         # Default printer is generic_orca (single extruder → M600).
         # Buyer asks for bambu_x1c (multi-tool → T<n>).
+        # NOTE: `optimized` uses max_swaps=5, so the 5th swap will
+        # overflow the 4-lane AMS and fall back to an M600 marker.
+        # We verify both that tool changes appear AND that any leftover
+        # M600 carries the explicit "out of AMS slots" marker (i.e.
+        # we never silently emit a bare M600 to a multi-tool machine).
         job_id = optimized["job_id"]
         base = client.get(f"{API}/export/{job_id}/3mf")
         with zipfile.ZipFile(io.BytesIO(base.content)) as z:
             base_cfg = z.read("Metadata/project_settings.config").decode("utf-8")
         assert "M600" in base_cfg
+        assert "T1" not in base_cfg  # generic profile is single-extruder
 
         override = client.get(
             f"{API}/export/{job_id}/3mf", params={"printer": "bambu_x1c"}
@@ -411,9 +418,38 @@ class TestPrinters:
         assert override.status_code == 200
         with zipfile.ZipFile(io.BytesIO(override.content)) as z:
             cfg = z.read("Metadata/project_settings.config").decode("utf-8")
-        assert "M600" not in cfg
-        # Bambu's bed is 256 — that gets baked into printable_area
+        # AMS lanes assigned
+        assert "T1" in cfg and "T2" in cfg and "T3" in cfg
+        # Bambu's bed (256mm) is in the printable area
         assert "256x256" in cfg
+        # Any leftover M600 must carry the overflow marker.
+        if "M600" in cfg:
+            assert "out of AMS slots" in cfg
+
+    def test_ams_slot_overflow_falls_back_to_m600(self, client, uploaded):
+        # Bambu AMS has 4 lanes. Asking for 6 filaments → 5 swaps →
+        # slot 4 should fall back to M600 with a marker comment so the
+        # printer doesn't error trying to switch to a non-existent T4.
+        body = {
+            "image_id": uploaded["image_id"],
+            "width_mm": 100.0,
+            "height_mm": 100.0,
+            "thickness_mm": 3.0,
+            "border_mm": 2.0,
+            "layer_height_mm": 0.12,
+            "max_swaps": 5,
+            "geometry": "flat",
+            "printer_id": "bambu_x1c",
+        }
+        r = client.post(f"{API}/optimize", json=body)
+        assert r.status_code == 200
+        job_id = r.json()["job_id"]
+        threemf = client.get(f"{API}/export/{job_id}/3mf")
+        with zipfile.ZipFile(io.BytesIO(threemf.content)) as z:
+            cfg = z.read("Metadata/project_settings.config").decode("utf-8")
+        # 4 valid tool slots (T1-T3) plus at least one overflow M600.
+        assert "T1" in cfg and "T2" in cfg and "T3" in cfg
+        assert "out of AMS slots" in cfg
 
 
 # --- legacy status endpoints -----------------------------------------------

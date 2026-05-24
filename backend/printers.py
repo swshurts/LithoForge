@@ -314,11 +314,27 @@ def build_layer_change_gcode(
 
     if profile["multi_tool"]:
         # T0 is the BASE filament (loaded before print starts).
-        # Each subsequent swap moves to the next AMS lane.
-        return "\n".join(
-            f"{{if layer_num == {idx}}}T{slot + 1}{{endif}}"
-            for slot, idx in enumerate(swap_layer_indices)
-        )
+        # Each subsequent swap moves to the next tool slot.
+        #
+        # Most AMS-style printers cap at 4 lanes (T0-T3). The Prusa XL
+        # has 5 tools (T0-T4). We assume a 4-tool maximum unless the
+        # profile says otherwise — slots beyond that would error on the
+        # printer, so we wrap with modulo and emit a comment marker so
+        # the user notices.
+        max_tools = 5 if profile.get("id") == "prusa_xl" else 4
+        lines: List[str] = []
+        for slot, idx in enumerate(swap_layer_indices):
+            tool = slot + 1
+            if tool >= max_tools:
+                # Out of tool slots — fall back to an M600 manual pause so
+                # the user still gets a swap prompt rather than a printer
+                # error.
+                lines.append(
+                    f"{{if layer_num == {idx}}}M600 ; out of AMS slots{{endif}}"
+                )
+            else:
+                lines.append(f"{{if layer_num == {idx}}}T{tool}{{endif}}")
+        return "\n".join(lines)
 
     return "\n".join(
         f"{{if layer_num == {idx}}}M600{{endif}}"
