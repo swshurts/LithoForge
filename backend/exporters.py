@@ -29,8 +29,9 @@ class GeometrySpec:
     width_mm: float
     height_mm: float
     border_mm: float = 0.0
-    mode: str = "flat"          # "flat" | "curved" | "cylindrical"
+    mode: str = "flat"          # "flat" | "curved" | "cylindrical" | "disc"
     curve_radius_mm: float = 80  # used when mode == curved/cylindrical
+    dome_mm: float = 0.0         # used when mode == disc (gentle dome height)
 
 
 # ---------------------------------------------------------------------------
@@ -53,8 +54,17 @@ def _build_vertices(
     # min thickness = 1 layer so the print is continuous.
     z_top = (np.maximum(layer_map, 1) * layer_height_mm).astype(np.float64)
 
-    if geo.mode == "flat":
+    if geo.mode in ("flat", "disc"):
         X, Y = np.meshgrid(xs, ys)
+        # Disc gets an optional gentle dome bump added to z_top.
+        if geo.mode == "disc" and geo.dome_mm > 0:
+            cx = geo.border_mm + usable_w / 2.0
+            cy = geo.border_mm + usable_h / 2.0
+            radius = min(usable_w, usable_h) / 2.0
+            if radius > 0:
+                rr = np.sqrt((X - cx) ** 2 + (Y - cy) ** 2) / radius
+                dome = np.clip(1.0 - rr * rr, 0.0, 1.0) * geo.dome_mm
+                z_top = z_top + dome
         top = np.stack([X, Y, z_top], axis=-1)
         bottom = np.stack([X, Y, np.zeros_like(z_top)], axis=-1)
         return top, bottom
@@ -82,6 +92,21 @@ def _build_vertices(
     return top, bottom
 
 
+def _disc_valid_mask(h: int, w: int, geo: GeometrySpec) -> np.ndarray:
+    """For disc mode, returns a (h, w) bool mask of vertices that lie
+    inside the inscribed circle. The circle is centred on the usable
+    area and uses the smaller of usable_w/usable_h as the diameter."""
+    usable_w = geo.width_mm - 2 * geo.border_mm
+    usable_h = geo.height_mm - 2 * geo.border_mm
+    cx = geo.border_mm + usable_w / 2.0
+    cy = geo.border_mm + usable_h / 2.0
+    radius = min(usable_w, usable_h) / 2.0
+    xs = np.linspace(geo.border_mm, geo.border_mm + usable_w, w)
+    ys = np.linspace(geo.border_mm, geo.border_mm + usable_h, h)
+    X, Y = np.meshgrid(xs, ys)
+    return ((X - cx) ** 2 + (Y - cy) ** 2) <= (radius * radius)
+
+
 def _build_mesh(
     layer_map: np.ndarray,
     layer_height_mm: float,
@@ -103,11 +128,24 @@ def _build_mesh(
     def bi(y, x):
         return bot_offset + y * w + x
 
+    # For disc mode, only emit triangles where ALL 4 cell corners are
+    # inside the circular mask. The side walls then trace the boundary
+    # of that masked region instead of the rectangular outline.
+    if geo.mode == "disc":
+        valid = _disc_valid_mask(h, w, geo)
+        cell_ok = (
+            valid[:-1, :-1] & valid[:-1, 1:] & valid[1:, :-1] & valid[1:, 1:]
+        )
+    else:
+        cell_ok = np.ones((h - 1, w - 1), dtype=bool)
+
     faces: List[Tuple[int, int, int]] = []
 
-    # Top surface
+    # Top surface (only where cell is valid)
     for y in range(h - 1):
         for x in range(w - 1):
+            if not cell_ok[y, x]:
+                continue
             a = ti(y, x)
             b = ti(y, x + 1)
             c = ti(y + 1, x + 1)
@@ -115,9 +153,11 @@ def _build_mesh(
             faces.append((a, b, c))
             faces.append((a, c, d))
 
-    # Bottom surface (reverse winding so normals face down/inward)
+    # Bottom surface (reverse winding)
     for y in range(h - 1):
         for x in range(w - 1):
+            if not cell_ok[y, x]:
+                continue
             a = bi(y, x)
             b = bi(y, x + 1)
             c = bi(y + 1, x + 1)
@@ -125,7 +165,44 @@ def _build_mesh(
             faces.append((a, c, b))
             faces.append((a, d, c))
 
-    # Four side walls
+    if geo.mode == "disc":
+        # Walk every cell-edge where one neighbour is invalid (or off-grid)
+        # and add a side wall there. Each edge is parameterised by its
+        # two endpoints (vertex indices in the top/bottom grid).
+        def add_side_wall(p0, p1, outward_right):
+            """Add two triangles forming a quad between top edge (p0,p1)
+            and the corresponding bottom edge. Wind so the normal points
+            outward."""
+            t0, t1 = ti(*p0), ti(*p1)
+            b0, b1 = bi(*p0), bi(*p1)
+            if outward_right:
+                faces.append((t0, b0, b1))
+                faces.append((t0, b1, t1))
+            else:
+                faces.append((t0, b1, b0))
+                faces.append((t0, t1, b1))
+
+        for y in range(h - 1):
+            for x in range(w - 1):
+                if not cell_ok[y, x]:
+                    continue
+                # Top edge (y, x)-(y, x+1): outside if cell above missing
+                if y == 0 or not cell_ok[y - 1, x]:
+                    add_side_wall((y, x + 1), (y, x), outward_right=True)
+                # Bottom edge (y+1, x)-(y+1, x+1): outside if cell below missing
+                if y == h - 2 or not cell_ok[y + 1, x]:
+                    add_side_wall((y + 1, x), (y + 1, x + 1), outward_right=True)
+                # Left edge (y, x)-(y+1, x): outside if cell left missing
+                if x == 0 or not cell_ok[y, x - 1]:
+                    add_side_wall((y, x), (y + 1, x), outward_right=True)
+                # Right edge (y, x+1)-(y+1, x+1): outside if cell right missing
+                if x == w - 2 or not cell_ok[y, x + 1]:
+                    add_side_wall((y + 1, x + 1), (y, x + 1), outward_right=True)
+
+        faces_arr = np.array(faces, dtype=np.int32)
+        return vertices, faces_arr
+
+    # Four side walls for flat/curved/cylindrical rectangle
     for x in range(w - 1):
         # y=0 edge
         a, b = ti(0, x), ti(0, x + 1)

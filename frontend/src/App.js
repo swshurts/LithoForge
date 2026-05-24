@@ -28,6 +28,7 @@ const DEFAULT_CONFIG = {
   max_swaps: 5,
   geometry: "flat",
   curve_radius_mm: 80,
+  dome_mm: 0,
   render_mode: "painting",
   relief: 0.5,
 };

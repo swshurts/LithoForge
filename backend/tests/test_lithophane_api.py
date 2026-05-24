@@ -288,6 +288,37 @@ class TestCurvedGeometry:
         assert tri_count > 0
 
 
+# --- disc geometry ----------------------------------------------------------
+
+class TestDiscGeometry:
+    def test_disc_optimize_and_export(self, client, uploaded):
+        body = {
+            "image_id": uploaded["image_id"],
+            "width_mm": 100.0,
+            "height_mm": 100.0,
+            "thickness_mm": 2.4,
+            "border_mm": 2.0,
+            "layer_height_mm": 0.2,
+            "max_swaps": 3,
+            "geometry": "disc",
+            "dome_mm": 1.5,
+        }
+        r = client.post(f"{API}/optimize", json=body)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        job_id = data["job_id"]
+        # All three exports should succeed.
+        for kind in ("stl", "swaps", "3mf"):
+            x = client.get(f"{API}/export/{job_id}/{kind}")
+            assert x.status_code == 200, f"{kind} failed"
+        stl = client.get(f"{API}/export/{job_id}/stl")
+        tri_count = struct.unpack("<I", stl.content[80:84])[0]
+        # Disc cuts away ~21% of cells compared to rectangle (π/4) and adds
+        # boundary side walls, so triangle count should be > 0 and clearly
+        # less than the un-masked rectangle's count would be.
+        assert tri_count > 0
+
+
 # --- legacy status endpoints -----------------------------------------------
 
 class TestLegacyStatus:

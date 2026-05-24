@@ -108,3 +108,21 @@ export const getCreatorProfile = async (userId) => {
   const { data } = await api.get(`/creators/${userId}`);
   return data;
 };
+
+// --- Marketplace Phase B: guest checkout ----------------------------
+export const createCheckoutSession = async (jobId, buyerEmail) => {
+  const { data } = await api.post(`/marketplace/${jobId}/checkout`, {
+    job_id: jobId,
+    buyer_email: buyerEmail,
+    origin_url: window.location.origin,
+  });
+  return data; // { url, session_id }
+};
+
+export const getCheckoutStatus = async (sessionId) => {
+  const { data } = await api.get(`/marketplace/checkout/status/${sessionId}`);
+  return data; // { status, payment_status, amount_total, currency, job_id, download_token }
+};
+
+export const tokenExportUrl = (jobId, kind, token) =>
+  `${API}/export/${jobId}/${kind}?token=${encodeURIComponent(token)}`;

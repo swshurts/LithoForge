@@ -1,0 +1,40 @@
+{
+  "summary": "Backend + Frontend testing for CMYKW Lithophane Phase B (disc geometry + guest checkout). 29/29 backend pytest tests pass. Frontend end-to-end guest flow verified: page loads with no auth overlay blocking, image upload works without sign-in, switching to Circular disc shows Diameter + Dome rows and hides Height, Generate produces a circular preview (transparent corners), Marketplace browses without sign-in, listing detail Buy button opens PurchaseDialog with 6% fee math, email validation properly enables/disables the submit button.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_lithophane_api.py",
+    "/app/backend/tests/test_marketplace.py",
+    "/app/backend/tests/test_marketplace_checkout.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py still uses deprecated @app.on_event('shutdown'); migrate to FastAPI lifespan context manager.",
+    "JOBS/UPLOADS in-memory dicts not persisted; will be wiped on backend restart. For paid marketplace downloads this is a real risk — a buyer who pays but the backend restarts before they download would lose their files. Consider persisting upload bytes/intermediate state to Mongo or object storage.",
+    "exporters._build_mesh / write_stl_binary still use per-pixel Python loops; for production scale consider numpy-vectorised mesh + struct dtype tobytes().",
+    "OptimizeIn.geometry accepts any string — should be Literal['flat','curved','cylindrical','disc'] for stricter validation (a typo silently falls back).",
+    "PurchaseDialog uses simple regex for email validation client-side only — backend should also validate buyer_email on /checkout (currently the only auth is Stripe rejecting an invalid email).",
+    "Stripe webhook handler should be idempotent and validate signature header (couldn't verify in tests but worth confirming since payment_transactions update happens here)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_marketplace_checkout.py"
+  ],
+  "success_rate": {
+    "backend": "100% (29/29 pytest)",
+    "frontend": "100% — all 13 review items pass"
+  },
+  "test_credentials": "None required for guest flows. For authenticated marketplace flows, follow seed instructions in /app/memory/test_credentials.md (already used by existing test_marketplace.py).",
+  "seed_data_creation": "A listed job 'Sunset Test Print' (id 8b1303d7-14cf-4710-a54b-557eaf4fa605, $42.50, 30 layers, by Demo User) was already present in MongoDB and used to validate the PurchaseDialog. test_marketplace_checkout.py seeds and cleans up its own unlisted job for the 404 path.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Three pytest files cover the API surface: test_lithophane_api.py (health/upload/optimize/exports/curved/disc/legacy), test_marketplace.py (Phase A publish/browse/unpublish), test_marketplace_checkout.py (Phase B guest browse, guest upload+optimize, checkout 404 paths for unknown + unlisted jobs, disc 100x100 dome=1.5). Full Stripe success-path payment cannot be exercised headlessly (real Stripe checkout URL is opened in a hosted page); validate the request body for /api/marketplace/{job_id}/checkout requires {job_id, buyer_email, origin_url}. Frontend testids of note: upload-zone, upload-file-input, geometry-select (shadcn button — click then click option text), row-dome, dome-slider, generate-btn, header-marketplace-link, purchase-btn, purchase-dialog, purchase-email-input, purchase-submit-btn.",
+  "rca of the issue": "No bugs found. Initial 422 on /checkout in my first test run was a test-side payload issue: the endpoint requires job_id + buyer_email + origin_url in the body (not just buyer_email). Test was updated to send the full payload and 404 behaviour is now correctly verified for both unknown and unlisted job_ids."
+}

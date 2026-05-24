@@ -153,6 +153,15 @@ async def load_job(
     )
 
 
+async def load_job_any_owner(
+    db: AsyncIOMotorDatabase, job_id: str
+) -> Optional[Dict[str, Any]]:
+    """Load a job by id without an owner constraint. Used by Phase B
+    checkout — a buyer with a valid download_token needs the seller's job
+    even though they don't own it."""
+    return await db.jobs.find_one({"job_id": job_id}, {"_id": 0})
+
+
 def hydrate_in_memory_job(stored: Dict[str, Any]) -> Dict[str, Any]:
     """Convert a persisted job doc back into the same shape the in-memory
     JOBS dict uses, so the existing /api/export paths can serve it."""

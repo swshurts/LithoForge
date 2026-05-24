@@ -1,0 +1,211 @@
+import React, { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { CheckCircle2, Download, FileArchive, FileText } from "lucide-react";
+import { MarketplaceHeader } from "./MarketplaceHeader";
+import {
+  getCheckoutStatus,
+  getListingDetail,
+  tokenExportUrl,
+} from "../../lib/api";
+
+const POLL_INTERVAL_MS = 2000;
+const MAX_POLLS = 30; // ~60 seconds; Stripe usually resolves in a few seconds.
+
+/** Marketplace post-checkout page.
+ *
+ *  Reads `session_id` from the URL (Stripe redirects here with it), polls
+ *  /marketplace/checkout/status/{session_id} until paid, then surfaces the
+ *  per-job download token so the buyer can grab their STL/3MF immediately.
+ */
+export const PurchaseSuccessPage = () => {
+  const { jobId } = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const sessionId = searchParams.get("session_id");
+
+  const [status, setStatus] = useState("checking"); // checking|paid|expired|error
+  const [token, setToken] = useState(null);
+  const [listing, setListing] = useState(null);
+  const [error, setError] = useState("");
+  const pollsRef = useRef(0);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setStatus("error");
+      setError("Missing session id");
+      return;
+    }
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      pollsRef.current += 1;
+      try {
+        const data = await getCheckoutStatus(sessionId);
+        if (data.payment_status === "paid") {
+          if (!cancelled) {
+            setStatus("paid");
+            setToken(data.download_token);
+          }
+          return;
+        }
+        if (data.status === "expired") {
+          if (!cancelled) {
+            setStatus("expired");
+            setError("This checkout session expired");
+          }
+          return;
+        }
+        if (pollsRef.current >= MAX_POLLS) {
+          if (!cancelled) {
+            setStatus("error");
+            setError("Timed out waiting for Stripe. Check your email for the link.");
+          }
+          return;
+        }
+        setTimeout(poll, POLL_INTERVAL_MS);
+      } catch (err) {
+        if (!cancelled) {
+          setStatus("error");
+          setError(err?.response?.data?.detail || "Could not check payment status");
+        }
+      }
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await getListingDetail(jobId);
+        if (!cancelled) setListing(data);
+      } catch {
+        /* not fatal — show generic copy */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId]);
+
+  return (
+    <div
+      className="min-h-screen flex flex-col bg-zinc-950 text-zinc-100"
+      data-testid="purchase-success-page"
+    >
+      <MarketplaceHeader subtitle="Checkout" />
+      <main className="flex-1 max-w-3xl mx-auto w-full px-5 py-12">
+        {status === "checking" && (
+          <div className="text-center space-y-3" data-testid="status-checking">
+            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500 animate-pulse">
+              Confirming payment with Stripe…
+            </div>
+            <div className="font-mono text-[10px] text-zinc-600">
+              Please don't close this tab.
+            </div>
+          </div>
+        )}
+
+        {status === "paid" && token && (
+          <div className="space-y-8" data-testid="status-paid">
+            <div className="text-center space-y-3">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
+              <h1 className="font-display text-4xl font-black tracking-tight leading-none">
+                Payment received
+              </h1>
+              <div className="font-mono text-[11px] text-zinc-500">
+                We've emailed your download link as backup. Below are the
+                files ready to print.
+              </div>
+            </div>
+
+            {listing && (
+              <div className="border border-zinc-800 p-5 flex gap-5 items-center">
+                {listing.preview_png_base64 && (
+                  <img
+                    src={`data:image/png;base64,${listing.preview_png_base64}`}
+                    alt={listing.title}
+                    className="w-24 h-24 object-cover border border-zinc-800"
+                  />
+                )}
+                <div>
+                  <div className="font-display text-xl font-bold">
+                    {listing.title}
+                  </div>
+                  <div className="font-mono text-[10px] text-zinc-500 mt-1">
+                    by {listing.creator_name}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid sm:grid-cols-3 gap-3">
+              <a
+                href={tokenExportUrl(jobId, "stl", token)}
+                download
+                data-testid="download-stl"
+                className="flex flex-col items-center justify-center gap-2 border border-zinc-800 hover:border-zinc-400 bg-zinc-900 py-6 transition-colors"
+              >
+                <FileArchive className="w-6 h-6" />
+                <span className="font-mono text-[11px] font-bold uppercase tracking-[0.18em]">
+                  STL
+                </span>
+              </a>
+              <a
+                href={tokenExportUrl(jobId, "3mf", token)}
+                download
+                data-testid="download-3mf"
+                className="flex flex-col items-center justify-center gap-2 border border-zinc-800 hover:border-zinc-400 bg-zinc-900 py-6 transition-colors"
+              >
+                <Download className="w-6 h-6" />
+                <span className="font-mono text-[11px] font-bold uppercase tracking-[0.18em]">
+                  3MF
+                </span>
+              </a>
+              <a
+                href={tokenExportUrl(jobId, "swaps", token)}
+                download
+                data-testid="download-swaps"
+                className="flex flex-col items-center justify-center gap-2 border border-zinc-800 hover:border-zinc-400 bg-zinc-900 py-6 transition-colors"
+              >
+                <FileText className="w-6 h-6" />
+                <span className="font-mono text-[11px] font-bold uppercase tracking-[0.18em]">
+                  Swaps
+                </span>
+              </a>
+            </div>
+
+            <div className="text-center font-mono text-[10px] text-zinc-600 leading-relaxed">
+              Bookmark this page — your download token is valid permanently.
+              <br />
+              <Link to="/marketplace" className="underline hover:text-zinc-300">
+                ← Back to marketplace
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {(status === "expired" || status === "error") && (
+          <div className="space-y-4 text-center" data-testid="status-error">
+            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-red-400">
+              {status === "expired" ? "Session expired" : "Something went wrong"}
+            </div>
+            <div className="font-mono text-[11px] text-zinc-400">{error}</div>
+            <button
+              onClick={() => navigate(`/marketplace/${jobId}`)}
+              className="font-mono text-[10px] uppercase tracking-[0.18em] border border-zinc-700 px-4 py-2 hover:bg-zinc-100 hover:text-zinc-950 transition-colors"
+              data-testid="back-to-listing-btn"
+            >
+              Back to listing
+            </button>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+};

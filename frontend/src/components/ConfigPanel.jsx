@@ -45,6 +45,7 @@ export const ConfigPanel = ({
 }) => {
   const update = (key, v) => setConfig((c) => ({ ...c, [key]: v }));
   const isPainting = config.render_mode === "painting";
+  const isDisc = config.geometry === "disc";
   const swapsMax = Math.max(1, Math.min(7, paletteLength - 1));
 
   return (
@@ -122,7 +123,8 @@ export const ConfigPanel = ({
             <br /><br />
             <strong className="text-zinc-200">Shape</strong>: flat works
             for any printer; curved/cylindrical require the matching
-            print bed orientation.
+            print bed orientation; circular disc gives a round print
+            (with optional gentle dome).
           </HelpHint>
         </div>
         <div className="space-y-4">
@@ -154,20 +156,32 @@ export const ConfigPanel = ({
                 >
                   Cylindrical
                 </SelectItem>
+                <SelectItem
+                  value="disc"
+                  className="font-mono text-xs rounded-none"
+                >
+                  Circular disc
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <Row
-            label="Width"
-            value={config.width_mm}
+            label={isDisc ? "Diameter" : "Width"}
+            value={isDisc ? Math.min(config.width_mm, config.height_mm) : config.width_mm}
             unit="mm"
             testid="row-width"
           >
             <Slider
               data-testid="width-slider"
-              value={[config.width_mm]}
-              onValueChange={([v]) => update("width_mm", v)}
+              value={[isDisc ? Math.min(config.width_mm, config.height_mm) : config.width_mm]}
+              onValueChange={([v]) => {
+                if (isDisc) {
+                  setConfig((c) => ({ ...c, width_mm: v, height_mm: v }));
+                } else {
+                  update("width_mm", v);
+                }
+              }}
               min={40}
               max={300}
               step={1}
@@ -175,22 +189,24 @@ export const ConfigPanel = ({
             />
           </Row>
 
-          <Row
-            label="Height"
-            value={config.height_mm}
-            unit="mm"
-            testid="row-height"
-          >
-            <Slider
-              data-testid="height-slider"
-              value={[config.height_mm]}
-              onValueChange={([v]) => update("height_mm", v)}
-              min={40}
-              max={300}
-              step={1}
-              disabled={disabled}
-            />
-          </Row>
+          {!isDisc && (
+            <Row
+              label="Height"
+              value={config.height_mm}
+              unit="mm"
+              testid="row-height"
+            >
+              <Slider
+                data-testid="height-slider"
+                value={[config.height_mm]}
+                onValueChange={([v]) => update("height_mm", v)}
+                min={40}
+                max={300}
+                step={1}
+                disabled={disabled}
+              />
+            </Row>
+          )}
 
           <Row
             label="Thickness"
@@ -226,7 +242,7 @@ export const ConfigPanel = ({
             />
           </Row>
 
-          {config.geometry !== "flat" && (
+          {config.geometry !== "flat" && config.geometry !== "disc" && (
             <Row
               label="Curve radius"
               value={config.curve_radius_mm}
@@ -242,6 +258,28 @@ export const ConfigPanel = ({
                 step={1}
                 disabled={disabled}
               />
+            </Row>
+          )}
+
+          {isDisc && (
+            <Row
+              label="Dome height"
+              value={config.dome_mm.toFixed(1)}
+              unit="mm"
+              testid="row-dome"
+            >
+              <Slider
+                data-testid="dome-slider"
+                value={[config.dome_mm]}
+                onValueChange={([v]) => update("dome_mm", v)}
+                min={0}
+                max={8}
+                step={0.1}
+                disabled={disabled}
+              />
+              <div className="font-mono text-[10px] text-zinc-600 mt-1">
+                0 mm = flat disc · &gt;0 adds a gentle dome to the top face
+              </div>
             </Row>
           )}
         </div>
@@ -357,7 +395,9 @@ export const ConfigPanel = ({
                 Volume
               </div>
               <div className="font-mono text-lg text-zinc-100 tabular-nums mt-1">
-                {((config.width_mm * config.height_mm * config.thickness_mm) / 1000).toFixed(1)}
+                {isDisc
+                  ? (Math.PI * Math.pow(Math.min(config.width_mm, config.height_mm) / 2, 2) * config.thickness_mm / 1000).toFixed(1)
+                  : ((config.width_mm * config.height_mm * config.thickness_mm) / 1000).toFixed(1)}
                 <span className="text-zinc-600 text-xs ml-1">cm³</span>
               </div>
             </div>

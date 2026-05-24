@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Layers, ShoppingBag, User as UserIcon } from "lucide-react";
 import { MarketplaceHeader } from "./MarketplaceHeader";
+import { PurchaseDialog } from "./PurchaseDialog";
 import { getListingDetail } from "../../lib/api";
 
 export const ListingDetailPage = () => {
@@ -9,6 +10,7 @@ export const ListingDetailPage = () => {
   const [listing, setListing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,17 +99,16 @@ export const ListingDetailPage = () => {
                   </span>
                 </div>
                 <button
-                  disabled
+                  onClick={() => setDialogOpen(true)}
                   data-testid="purchase-btn"
-                  title="Coming soon — Stripe checkout ships in the next phase"
-                  className="w-full flex items-center justify-center gap-2 bg-zinc-100 text-zinc-950 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.2em] disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-2 bg-zinc-100 text-zinc-950 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.2em] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
                 >
                   <ShoppingBag className="w-3.5 h-3.5" />
-                  Buy via creator
+                  Buy · ${listing.price_usd.toFixed(2)}
                 </button>
                 <div className="font-mono text-[9px] text-zinc-600 leading-relaxed text-center">
-                  Direct purchase + print fulfillment ships in the next
-                  release. For now, message the creator to arrange a sale.
+                  Instant STL/3MF download after payment. Backup link
+                  emailed for safekeeping. No account required.
                 </div>
               </div>
 
@@ -119,6 +120,9 @@ export const ListingDetailPage = () => {
           </div>
         )}
       </main>
+      {dialogOpen && listing && (
+        <PurchaseDialog listing={listing} onClose={() => setDialogOpen(false)} />
+      )}
     </div>
   );
 };

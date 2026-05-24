@@ -34,9 +34,11 @@ from jobs_history import (
     build_jobs_router,
     hydrate_in_memory_job,
     load_job,
+    load_job_any_owner,
     persist_job,
 )
 from marketplace import build_marketplace_router
+from marketplace_checkout import build_checkout_router, resolve_download_token
 
 
 ROOT_DIR = Path(__file__).parent
@@ -94,8 +96,9 @@ class OptimizeIn(BaseModel):
     border_mm: float = 2.0
     layer_height_mm: float = 0.12
     max_swaps: int = 5
-    geometry: str = "flat"     # flat | curved | cylindrical
+    geometry: str = "flat"     # flat | curved | cylindrical | disc
     curve_radius_mm: float = 80.0
+    dome_mm: float = 0.0       # disc: gentle dome bump (mm) atop the disc
     filaments: Optional[List[FilamentIn]] = None
     auto_order: bool = True
     render_mode: str = "lithophane"  # "lithophane" | "painting"
@@ -260,6 +263,21 @@ async def optimize_endpoint(
         relief=body.relief,
     )
 
+    # Disc geometry: mask preview/heightmap to a circle so the user sees
+    # the actual printed area. The STL exporter handles the geometric
+    # masking; this only affects the visual preview images.
+    if body.geometry == "disc":
+        import numpy as _np
+        h_px, w_px = result.layer_map.shape
+        yy, xx = _np.ogrid[:h_px, :w_px]
+        cy, cx = (h_px - 1) / 2.0, (w_px - 1) / 2.0
+        radius = min(h_px, w_px) / 2.0
+        mask = ((yy - cy) ** 2 + (xx - cx) ** 2) <= (radius * radius)
+        # Layer map: outside circle → 0 layers (drops out in mesh anyway)
+        result.layer_map = _np.where(mask, result.layer_map, 0).astype(_np.int32)
+        # Rendered preview: outside circle → black
+        result.rendered_rgb = result.rendered_rgb * mask[:, :, None]
+
     preview = base64.b64encode(rendered_to_png_bytes(result.rendered_rgb)).decode()
     heightmap = base64.b64encode(
         layer_map_to_png_bytes(result.layer_map, result.total_layers)
@@ -358,6 +376,7 @@ def _build_export(job_id: str) -> Dict[str, Any]:
         border_mm=req["border_mm"],
         mode=req["geometry"],
         curve_radius_mm=req["curve_radius_mm"],
+        dome_mm=float(req.get("dome_mm", 0.0)),
     )
     export = build_export(
         layer_map=job["layer_map"],
@@ -383,11 +402,32 @@ async def _ensure_job_in_memory(job_id: str, current_user) -> None:
         JOBS[job_id] = hydrate_in_memory_job(stored)
 
 
+async def _ensure_job_for_paid_buyer(job_id: str, token: str) -> bool:
+    """Buyer flow: if a valid download_token was provided, hydrate the
+    seller's job (regardless of owner) into JOBS so the export endpoints
+    can serve it. Returns True if the token was valid."""
+    if job_id in JOBS:
+        return True
+    txn = await resolve_download_token(db, job_id, token)
+    if txn is None:
+        return False
+    stored = await load_job_any_owner(db, job_id)
+    if stored is None:
+        return False
+    JOBS[job_id] = hydrate_in_memory_job(stored)
+    return True
+
+
 @api_router.get("/export/{job_id}/stl")
 async def export_stl(
-    job_id: str, current_user=Depends(get_current_user_dep)
+    job_id: str,
+    current_user=Depends(get_current_user_dep),
+    token: Optional[str] = None,
 ) -> Response:
-    await _ensure_job_in_memory(job_id, current_user)
+    if token:
+        await _ensure_job_for_paid_buyer(job_id, token)
+    else:
+        await _ensure_job_in_memory(job_id, current_user)
     export = _build_export(job_id)
     return Response(
         content=export["stl"],
@@ -398,9 +438,14 @@ async def export_stl(
 
 @api_router.get("/export/{job_id}/swaps")
 async def export_swaps(
-    job_id: str, current_user=Depends(get_current_user_dep)
+    job_id: str,
+    current_user=Depends(get_current_user_dep),
+    token: Optional[str] = None,
 ) -> Response:
-    await _ensure_job_in_memory(job_id, current_user)
+    if token:
+        await _ensure_job_for_paid_buyer(job_id, token)
+    else:
+        await _ensure_job_in_memory(job_id, current_user)
     export = _build_export(job_id)
     return Response(
         content=export["swap_txt"],
@@ -411,9 +456,14 @@ async def export_swaps(
 
 @api_router.get("/export/{job_id}/3mf")
 async def export_3mf(
-    job_id: str, current_user=Depends(get_current_user_dep)
+    job_id: str,
+    current_user=Depends(get_current_user_dep),
+    token: Optional[str] = None,
 ) -> Response:
-    await _ensure_job_in_memory(job_id, current_user)
+    if token:
+        await _ensure_job_for_paid_buyer(job_id, token)
+    else:
+        await _ensure_job_in_memory(job_id, current_user)
     export = _build_export(job_id)
     return Response(
         content=export["threemf"],
@@ -449,10 +499,12 @@ app.include_router(api_router)
 presets_router = build_presets_router(db, require_user_dep)
 jobs_router = build_jobs_router(db, require_user_dep, JOBS)
 marketplace_router = build_marketplace_router(db, require_user_dep, get_current_user_dep)
+checkout_router = build_checkout_router(db)
 app.include_router(auth_router, prefix="/api")
 app.include_router(presets_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")
 app.include_router(marketplace_router, prefix="/api")
+app.include_router(checkout_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
