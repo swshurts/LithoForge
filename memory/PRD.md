@@ -151,6 +151,37 @@
       popover. Mounted next to: Render Mode, Geometry, Print Limits,
       AI Palette section.
 
+## Implemented (2026-02-23) — Platform: Marketplace Phase A
+- [x] **Listings data model** — embedded `listing` field on `jobs`
+      docs: `{title, description, price_usd, visibility: "listed",
+      listed_at}`. Platform fee constant `PLATFORM_FEE_PCT = 6.0`.
+- [x] **Creator endpoints** (auth required):
+      `PUT /api/my-jobs/{job_id}/listing` (publish or update),
+      `DELETE /api/my-jobs/{job_id}/listing` (unlist),
+      `GET /api/my-jobs/{job_id}/listing` (status check).
+- [x] **Public marketplace endpoints**:
+      `GET /api/marketplace` (browse + pagination),
+      `GET /api/marketplace/{job_id}` (full detail incl. preview),
+      `GET /api/creators/{user_id}` (creator profile + their listings).
+- [x] **`PublishDialog.jsx`** — modal with title / description /
+      price inputs + **live payout math** (Buyer pays $X − 6% fee =
+      $Y to creator). Supports both publish-new and edit-existing.
+      Unlist button when editing.
+- [x] **`MarketplacePage.jsx`** at `/marketplace` — public grid of
+      every listed work with thumbnail / title / price / creator.
+- [x] **`ListingDetailPage.jsx`** at `/marketplace/{job_id}` —
+      full preview + creator attribution + disabled "Buy via Creator"
+      CTA (Phase B will wire Stripe Checkout here).
+- [x] **`CreatorPage.jsx`** at `/creator/{user_id}` — creator avatar +
+      name + their listed works.
+- [x] **Job tile UI** — green "LISTED" badge when a job is published,
+      Store-icon button to open PublishDialog. `my-jobs` summary now
+      includes `listed` flag.
+- [x] **Header link** — "Marketplace" button in the studio header.
+- [x] **React Router** wired at `/`, `/marketplace`, `/marketplace/:id`,
+      `/creator/:id`.
+- [x] **Tests**: 5 new marketplace tests + 17 existing = 22/22 passing.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

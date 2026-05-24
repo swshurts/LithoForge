@@ -70,3 +70,41 @@ export const importCloudPresets = async (presets) => {
   const { data } = await api.post("/presets/import", presets, { withCredentials: true });
   return data;
 };
+
+// --- Marketplace (Phase A) ------------------------------------------
+export const PLATFORM_FEE_PCT = 6.0;
+
+export const publishListing = async (jobId, payload) => {
+  const { data } = await api.put(`/my-jobs/${jobId}/listing`, payload, {
+    withCredentials: true,
+  });
+  return data;
+};
+
+export const unpublishListing = async (jobId) => {
+  await api.delete(`/my-jobs/${jobId}/listing`, { withCredentials: true });
+};
+
+export const getListingStatus = async (jobId) => {
+  const { data } = await api.get(`/my-jobs/${jobId}/listing`, {
+    withCredentials: true,
+  });
+  return data;
+};
+
+export const browseMarketplace = async ({ limit = 60, skip = 0 } = {}) => {
+  const { data } = await api.get("/marketplace", {
+    params: { limit, skip },
+  });
+  return data;
+};
+
+export const getListingDetail = async (jobId) => {
+  const { data } = await api.get(`/marketplace/${jobId}`);
+  return data;
+};
+
+export const getCreatorProfile = async (userId) => {
+  const { data } = await api.get(`/creators/${userId}`);
+  return data;
+};

@@ -30,6 +30,7 @@ from palette_suggest import FILAMENT_LIBRARY, suggest_palette
 from auth import build_auth
 from presets import build_presets_router
 from jobs_history import build_jobs_router, persist_job, load_job, hydrate_in_memory_job
+from marketplace import build_marketplace_router
 
 
 ROOT_DIR = Path(__file__).parent
@@ -431,9 +432,11 @@ app.include_router(api_router)
 # can use the optional-user dep).
 presets_router = build_presets_router(db, require_user_dep)
 jobs_router = build_jobs_router(db, require_user_dep, JOBS)
+marketplace_router = build_marketplace_router(db, require_user_dep, get_current_user_dep)
 app.include_router(auth_router, prefix="/api")
 app.include_router(presets_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")
+app.include_router(marketplace_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

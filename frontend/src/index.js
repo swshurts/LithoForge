@@ -1,7 +1,11 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import "@/index.css";
 import App from "@/App";
+import { MarketplacePage } from "@/components/marketplace/MarketplacePage";
+import { CreatorPage } from "@/components/marketplace/CreatorPage";
+import { ListingDetailPage } from "@/components/marketplace/ListingDetailPage";
 import { installErrorReporter } from "@/lib/errorReporter";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, AuthCallbackHandler } from "@/lib/auth";
@@ -13,8 +17,15 @@ root.render(
   <React.StrictMode>
     <ErrorBoundary>
       <AuthProvider>
-        <AuthCallbackHandler />
-        <App />
+        <BrowserRouter>
+          <AuthCallbackHandler />
+          <Routes>
+            <Route path="/" element={<App />} />
+            <Route path="/marketplace" element={<MarketplacePage />} />
+            <Route path="/marketplace/:jobId" element={<ListingDetailPage />} />
+            <Route path="/creator/:userId" element={<CreatorPage />} />
+          </Routes>
+        </BrowserRouter>
       </AuthProvider>
     </ErrorBoundary>
   </React.StrictMode>,

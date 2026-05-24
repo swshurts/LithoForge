@@ -28,6 +28,7 @@ class JobSummary(BaseModel):
     filament_count: int
     thumbnail_base64: str  # tiny PNG, displayed in the history strip
     render_mode: str
+    listed: bool = False
 
 
 def _layer_map_to_b64(layer_map: np.ndarray) -> str:
@@ -56,6 +57,7 @@ def _shrink_png_for_thumb(png_b64: str, max_dim: int = 160) -> str:
 
 
 def _job_to_summary(doc: Dict[str, Any]) -> JobSummary:
+    listing = doc.get("listing") or {}
     return JobSummary(
         job_id=doc["job_id"],
         name=doc.get("name", "Untitled"),
@@ -65,6 +67,7 @@ def _job_to_summary(doc: Dict[str, Any]) -> JobSummary:
         filament_count=len(doc.get("filaments", [])),
         thumbnail_base64=doc.get("thumbnail_base64", ""),
         render_mode=doc.get("render_mode", "lithophane"),
+        listed=listing.get("visibility") == "listed",
     )
 
 
@@ -174,6 +177,7 @@ def build_jobs_router(
                 "filaments": 1,
                 "thumbnail_base64": 1,
                 "render_mode": 1,
+                "listing": 1,
             },
         ).sort("created_at", -1).limit(60)
         docs = await cursor.to_list(60)

@@ -1,5 +1,6 @@
 import React from "react";
-import { Zap, Cpu, Github } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Zap, Cpu, Store } from "lucide-react";
 import { UserMenu } from "./UserMenu";
 
 export const Header = ({ onGenerate, canGenerate, generating }) => {
@@ -38,15 +39,14 @@ export const Header = ({ onGenerate, canGenerate, generating }) => {
       </div>
 
       <div className="flex items-center gap-3">
-        <a
-          href="https://github.com"
-          target="_blank"
-          rel="noreferrer"
+        <Link
+          to="/marketplace"
+          data-testid="header-marketplace-link"
           className="hidden md:flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500 hover:text-zinc-200 transition-colors duration-150"
         >
-          <Github className="w-3.5 h-3.5" strokeWidth={1.5} />
-          Docs
-        </a>
+          <Store className="w-3.5 h-3.5" strokeWidth={1.5} />
+          Marketplace
+        </Link>
         <UserMenu />
         <button
           data-testid="generate-btn"
