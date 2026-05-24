@@ -343,6 +343,29 @@ def _generate_candidate_orders(base_palette: List[Filament]) -> List[List[Filame
     return candidates
 
 
+def _median_filter_lab(lab: np.ndarray, radius: int) -> np.ndarray:
+    """Per-channel 2D median filter on a Lab image. Returns a copy with
+    smoothed channels — used by painting mode to suppress noise-induced
+    speckling at filament-zone boundaries (chromatic simplification)."""
+    if radius <= 0:
+        return lab
+    try:
+        from scipy.ndimage import median_filter  # type: ignore
+        out = np.empty_like(lab)
+        size = (2 * radius + 1, 2 * radius + 1)
+        for c in range(3):
+            out[..., c] = median_filter(lab[..., c], size=size, mode="reflect")
+        return out
+    except Exception:
+        # scipy isn't strictly required; fall back to a cheap box mean.
+        from scipy.signal import convolve2d  # type: ignore
+        k = np.ones((2 * radius + 1, 2 * radius + 1)) / float((2 * radius + 1) ** 2)
+        out = np.empty_like(lab)
+        for c in range(3):
+            out[..., c] = convolve2d(lab[..., c], k, mode="same", boundary="symm")
+        return out
+
+
 def _optimize_painting(
     arr: np.ndarray,
     target_lab: np.ndarray,
@@ -350,17 +373,26 @@ def _optimize_painting(
     total_layers: int,
     layer_height_mm: float,
     relief: float,
+    smoothing: float = 0.0,
 ) -> "OptimizeResult":
     """Painting mode: each pixel shows the single filament colour nearest to
     its Lab target. No subtractive mixing; colour fidelity is bounded by the
     palette itself. Stack is ordered dark→light bottom→top so dark regions
     recess and light regions rise as relief.
 
-    The `relief` parameter (0..1) controls whether the surface within a
-    filament's Z-band is flat (0) or modulated by the pixel's luminance
-    (1 = full band-height variation), giving the print some bas-relief
-    texture within each colour region.
+    `smoothing` (0..1) controls a Lab-space median pre-pass that softens
+    speckled filament-zone boundaries on continuous photographs. 0 = off
+    (faithful but speckly); 1 = strong (radius ~5px on 512px image).
     """
+    # Pre-pass: chromatic simplification via per-channel median in Lab.
+    if smoothing > 0:
+        # Scale radius with the image's smaller dimension so the visual
+        # effect is roughly resolution-independent.
+        small_dim = min(target_lab.shape[:2])
+        max_radius = max(1, small_dim // 100)  # ~5 px on a 500-px image
+        radius = max(1, int(round(smoothing * max_radius)))
+        target_lab = _median_filter_lab(target_lab, radius)
+
     n = len(filaments)
     # Sort filaments by Lab L* ascending (darkest first, lightest last).
     fil_lab = skcolor.rgb2lab(
@@ -459,6 +491,7 @@ def optimize(
     auto_order: bool = True,
     render_mode: str = "lithophane",
     relief: float = 0.5,
+    smoothing: float = 0.0,
 ) -> OptimizeResult:
     """Optimize a photograph into either a back-lit lithophane (subtractive
     Beer-Lambert) or a reflective painting (nearest-filament mapping).
@@ -490,7 +523,8 @@ def optimize(
 
     if render_mode == "painting":
         return _optimize_painting(
-            arr, target_lab, base_palette, total_layers, layer_height_mm, relief
+            arr, target_lab, base_palette, total_layers, layer_height_mm,
+            relief, smoothing,
         )
 
     # Always use one allocation (histogram-based on the user's palette).

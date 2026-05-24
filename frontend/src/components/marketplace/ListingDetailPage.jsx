@@ -86,6 +86,34 @@ export const ListingDetailPage = () => {
                 </div>
               )}
 
+              <div className="grid grid-cols-2 gap-3 font-mono text-[10px]">
+                <div className="border border-zinc-800 p-3">
+                  <div className="uppercase tracking-[0.18em] text-zinc-500 mb-1">
+                    License
+                  </div>
+                  <div
+                    className="text-zinc-200"
+                    data-testid="listing-license"
+                  >
+                    {listing.license || "All Rights Reserved"}
+                  </div>
+                </div>
+                <div className="border border-zinc-800 p-3">
+                  <div className="uppercase tracking-[0.18em] text-zinc-500 mb-1">
+                    Designed for
+                  </div>
+                  <div
+                    className="text-zinc-200 truncate"
+                    data-testid="listing-printer"
+                  >
+                    {listing.designed_for_printer || "Generic FDM"}
+                  </div>
+                  <div className="text-zinc-600 text-[9px] mt-1">
+                    Buyer can re-export for a different printer after purchase.
+                  </div>
+                </div>
+              </div>
+
               <div className="border border-zinc-800 p-5 space-y-3">
                 <div className="flex items-baseline gap-2">
                   <span

@@ -109,6 +109,31 @@ export const getCreatorProfile = async (userId) => {
   return data;
 };
 
+// --- Printer profiles ----------------------------------------------
+export const listPrinters = async () => {
+  const { data } = await api.get("/printers");
+  return data.printers;
+};
+
+export const checkBedFit = async (printerId, widthMm, heightMm) => {
+  const { data } = await api.get(`/printers/${printerId}/fit`, {
+    params: { width_mm: widthMm, height_mm: heightMm },
+  });
+  return data;
+};
+
+// Creative-commons license presets used in PublishDialog.
+export const LICENSE_PRESETS = [
+  { id: "All Rights Reserved", label: "All Rights Reserved (default)" },
+  { id: "Personal Use Only", label: "Personal Use Only" },
+  { id: "CC0", label: "CC0 — Public Domain" },
+  { id: "CC-BY", label: "CC-BY — Attribution" },
+  { id: "CC-BY-SA", label: "CC-BY-SA — Attribution + ShareAlike" },
+  { id: "CC-BY-NC", label: "CC-BY-NC — Non-Commercial" },
+  { id: "CC-BY-NC-SA", label: "CC-BY-NC-SA — Non-Commercial + ShareAlike" },
+  { id: "CC-BY-ND", label: "CC-BY-ND — No Derivatives" },
+];
+
 // --- Marketplace Phase B: guest checkout ----------------------------
 export const createCheckoutSession = async (jobId, buyerEmail) => {
   const { data } = await api.post(`/marketplace/${jobId}/checkout`, {
@@ -124,5 +149,8 @@ export const getCheckoutStatus = async (sessionId) => {
   return data; // { status, payment_status, amount_total, currency, job_id, download_token }
 };
 
-export const tokenExportUrl = (jobId, kind, token) =>
-  `${API}/export/${jobId}/${kind}?token=${encodeURIComponent(token)}`;
+export const tokenExportUrl = (jobId, kind, token, printerId = null) => {
+  const params = new URLSearchParams({ token });
+  if (printerId) params.set("printer", printerId);
+  return `${API}/export/${jobId}/${kind}?${params.toString()}`;
+};

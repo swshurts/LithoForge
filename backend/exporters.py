@@ -19,9 +19,11 @@ import json
 import struct
 import zipfile
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
+
+from printers import PrinterProfile, build_layer_change_gcode, get_profile
 
 
 @dataclass
@@ -264,20 +266,24 @@ def write_stl_binary(vertices: np.ndarray, faces: np.ndarray) -> bytes:
 # Swap-instruction text + slicer paste-ready snippets
 # ---------------------------------------------------------------------------
 
-def _build_slic3r_family_snippet(layer_indices: List[int]) -> str:
-    """Conditional `{if layer_num==X}M600{endif}` blocks for PrusaSlicer /
-    SuperSlicer / OrcaSlicer / Bambu Studio. Paste into:
+def _build_slic3r_family_snippet(
+    layer_indices: List[int], multi_tool: bool = False
+) -> str:
+    """Conditional layer-change blocks for PrusaSlicer / SuperSlicer /
+    OrcaSlicer / Bambu Studio. Paste into:
         Printer Settings → Custom G-code → Before layer change G-code
 
-    layer_num is 0-indexed in PrusaSlicer; the first useful pause is at
-    the FIRST layer of the new colour, not the boundary layer beneath it,
-    so we use the same indices we report to humans (1-indexed boundaries
-    converted to 0-indexed via i-1)."""
+    Multi-tool printers emit `T<n>` tool changes (no manual pause);
+    single-extruder printers emit `M600` filament-change pauses."""
     if not layer_indices:
         return "; no colour swaps in this print\n"
-    parts: List[str] = []
-    for idx in layer_indices:
-        parts.append(f"{{if layer_num == {idx}}}M600{{endif}}")
+    if multi_tool:
+        parts = [
+            f"{{if layer_num == {idx}}}T{slot + 1}{{endif}}"
+            for slot, idx in enumerate(layer_indices)
+        ]
+    else:
+        parts = [f"{{if layer_num == {idx}}}M600{{endif}}" for idx in layer_indices]
     return "\n".join(parts) + "\n"
 
 
@@ -316,23 +322,13 @@ def build_swap_instructions(
     swap_colors: List[str],
     filament_names: List[str],
     layer_height_mm: float,
+    profile: Optional[PrinterProfile] = None,
 ) -> str:
-    """Generate a paste-ready, multi-slicer swap-instruction document.
+    """Generate a paste-ready, multi-slicer swap-instruction document."""
+    if profile is None:
+        profile = get_profile("generic_orca")
+    multi_tool = profile["multi_tool"]
 
-    Includes:
-      • Plain-language summary table
-      • Slic3r-family conditional snippet (PrusaSlicer / SuperSlicer /
-        OrcaSlicer / Bambu Studio)
-      • Cura post-processor note
-      • Raw Marlin G-code
-
-    The FIRST entry in swap_heights_mm is the base filament loaded at
-    Z=0, so the actual swap layers are entries 1..N. Layer indices here
-    use the 0-based numbering that PrusaSlicer's `layer_num` variable
-    uses (layer 0 = first printed layer)."""
-    # swap_heights_mm[i] is the Z at which `filament_names[i]` becomes
-    # active. The first item is the base filament (Z=0), so M600s only
-    # fire for items 1..N at their start-Z.
     swap_layer_indices: List[int] = []
     for z in swap_heights_mm[1:]:
         swap_layer_indices.append(max(1, int(round(z / layer_height_mm))))
@@ -340,8 +336,11 @@ def build_swap_instructions(
     lines: List[str] = [
         "; ====================================================================",
         "; CMYKW Lithophane — Colour Swap Instructions",
-        f";   layer_height = {layer_height_mm} mm",
-        f";   colour swaps = {len(swap_layer_indices)}",
+        f";   printer        = {profile['manufacturer']} {profile['name']}",
+        f";   slicer family  = {profile['slicer_family']}",
+        f";   swap mechanism = {'tool change (AMS / multi-tool)' if multi_tool else 'M600 manual pause'}",
+        f";   layer height   = {layer_height_mm} mm",
+        f";   colour swaps   = {len(swap_layer_indices)}",
         "; ====================================================================",
         ";",
         "; ----- Filament load order (bottom -> top) -----",
@@ -356,16 +355,26 @@ def build_swap_instructions(
     lines.append(
         "; ====================================================================="
     )
-    lines.append(
-        "; OPTION A — Paste into your slicer's 'Before layer change G-code':"
-    )
-    lines.append(
-        ";   Works in: PrusaSlicer / SuperSlicer / OrcaSlicer / Bambu Studio"
-    )
+    if multi_tool:
+        lines.append(
+            "; OPTION A — Paste into your slicer's 'Before layer change G-code':"
+        )
+        lines.append(
+            ";   (Multi-tool: T<n> changes AMS lane / extruder — no manual pause)"
+        )
+    else:
+        lines.append(
+            "; OPTION A — Paste into your slicer's 'Before layer change G-code':"
+        )
+        lines.append(
+            ";   Works in: PrusaSlicer / SuperSlicer / OrcaSlicer / Bambu Studio"
+        )
     lines.append(
         "; ====================================================================="
     )
-    lines.append(_build_slic3r_family_snippet(swap_layer_indices).rstrip())
+    lines.append(
+        _build_slic3r_family_snippet(swap_layer_indices, multi_tool).rstrip()
+    )
 
     lines.append("")
     lines.append(
@@ -440,46 +449,54 @@ def _project_config(
     filaments: List[Tuple[str, str]],
     swap_heights_mm: List[float],
     layer_height_mm: float,
+    profile: PrinterProfile,
+    license_text: str = "",
 ) -> str:
     """Bambu/Orca/Prusa-compatible project settings subset.
 
-    Crucially we embed a `layer_change_gcode` template made of conditional
-    `{if layer_num==X}M600{endif}` blocks, so a slicer that opens this
-    3MF and respects the per-project layer_change_gcode field will
-    automatically pause + prompt for filament at every swap layer —
-    no manual UI clicking required.
+    Embeds `layer_change_gcode` with the appropriate per-printer flavour:
+    `M600` pauses for single-extruder, `T<n>` tool changes for AMS / MMU /
+    multi-tool printers. Also tags the project with the printer's name
+    and the creator-declared license.
     """
     colours = [c for _, c in filaments]
     names = [n for n, _ in filaments]
 
-    # Build the conditional snippet only for the actual swap layers
-    # (skip the base filament loaded at Z=0).
     swap_layer_indices: List[int] = []
     for z in swap_heights_mm[1:]:
         swap_layer_indices.append(max(1, int(round(z / layer_height_mm))))
-    layer_change_gcode = "\n".join(
-        f"{{if layer_num == {i}}}M600{{endif}}" for i in swap_layer_indices
-    )
+    layer_change_gcode = build_layer_change_gcode(profile, swap_layer_indices)
 
-    cfg = {
-        # Slic3r-family / Bambu Studio honour these keys when importing
-        # filament colours from a project file.
+    cfg: dict[str, Any] = {
         "filament_colour": colours,
         "filament_type": ["PLA"] * len(colours),
         "filament_settings_id": names,
         "layer_height": layer_height_mm,
 
-        # Automatic colour-swap pauses on import. The conditional syntax
-        # is shared by PrusaSlicer, SuperSlicer, OrcaSlicer, Bambu Studio.
+        # Per-printer auto-swap G-code (M600 vs T<n>).
         "before_layer_change_gcode": layer_change_gcode,
         "layer_change_gcode": layer_change_gcode,
 
-        # Reference data the slicer doesn't need but useful for
-        # post-processors / tooling that read this file.
+        # Printer + bed metadata so slicers pick the right machine on import.
+        "printer_model": profile["name"],
+        "printer_manufacturer": profile["manufacturer"],
+        "slicer_family": profile["slicer_family"],
+        "printable_area": [
+            "0x0",
+            f"{profile['bed_x_mm']}x0",
+            f"{profile['bed_x_mm']}x{profile['bed_y_mm']}",
+            f"0x{profile['bed_y_mm']}",
+        ],
+        "printable_height": profile["max_z_mm"],
+
+        # Reference data for tooling that reads this file.
         "cmykw_swap_heights_mm": swap_heights_mm,
         "cmykw_swap_colors": colours,
         "cmykw_swap_layers": swap_layer_indices,
+        "cmykw_multi_tool": profile["multi_tool"],
     }
+    if license_text:
+        cfg["cmykw_license"] = license_text
     return json.dumps(cfg, indent=2)
 
 
@@ -489,10 +506,16 @@ def write_3mf(
     filaments: List[Tuple[str, str]],
     swap_heights_mm: List[float],
     layer_height_mm: float,
+    profile: Optional[PrinterProfile] = None,
+    license_text: str = "",
 ) -> bytes:
     """Build a minimal 3MF container with the mesh + colour metadata."""
+    if profile is None:
+        profile = get_profile("generic_orca")
     model_xml = _mesh_to_3mf_model(vertices, faces)
-    project_cfg = _project_config(filaments, swap_heights_mm, layer_height_mm)
+    project_cfg = _project_config(
+        filaments, swap_heights_mm, layer_height_mm, profile, license_text
+    )
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as z:
@@ -504,7 +527,7 @@ def write_3mf(
 
 
 # ---------------------------------------------------------------------------
-# Public helper: build both
+# Public helper: build all artefacts
 # ---------------------------------------------------------------------------
 
 def build_export(
@@ -514,18 +537,26 @@ def build_export(
     filament_names: List[str],
     swap_heights_mm: List[float],
     swap_colors: List[str],
+    printer_id: str = "generic_orca",
+    license_text: str = "",
 ) -> dict:
+    profile = get_profile(printer_id)
     vertices, faces = _build_mesh(layer_map, layer_height_mm, geo)
     stl_bytes = write_stl_binary(vertices, faces)
     swap_txt = build_swap_instructions(
-        swap_heights_mm, swap_colors, filament_names, layer_height_mm
+        swap_heights_mm, swap_colors, filament_names, layer_height_mm, profile
     )
     filaments = list(zip(filament_names, swap_colors))
-    threemf = write_3mf(vertices, faces, filaments, swap_heights_mm, layer_height_mm)
+    threemf = write_3mf(
+        vertices, faces, filaments, swap_heights_mm, layer_height_mm,
+        profile, license_text,
+    )
     return {
         "stl": stl_bytes,
         "swap_txt": swap_txt.encode("utf-8"),
         "threemf": threemf,
         "triangle_count": int(faces.shape[0]),
         "vertex_count": int(vertices.shape[0]),
+        "printer_id": profile["id"],
+        "supported_formats": profile["supported_formats"],
     }

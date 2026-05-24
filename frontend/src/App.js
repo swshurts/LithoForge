@@ -31,6 +31,8 @@ const DEFAULT_CONFIG = {
   dome_mm: 0,
   render_mode: "painting",
   relief: 0.5,
+  smoothing: 0,
+  printer_id: "generic_orca",
 };
 
 export default function App() {

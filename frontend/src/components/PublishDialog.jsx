@@ -4,10 +4,18 @@ import { Store, X } from "lucide-react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import {
   getListingStatus,
   publishListing,
   unpublishListing,
   PLATFORM_FEE_PCT,
+  LICENSE_PRESETS,
 } from "../lib/api";
 
 /**
@@ -19,6 +27,7 @@ export const PublishDialog = ({ jobId, jobName, onClose, onChanged }) => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("29");
+  const [license, setLicense] = useState("All Rights Reserved");
   const [existing, setExisting] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -33,6 +42,7 @@ export const PublishDialog = ({ jobId, jobName, onClose, onChanged }) => {
           setTitle(data.listing.title || "");
           setDescription(data.listing.description || "");
           setPrice(String(data.listing.price_usd ?? 29));
+          setLicense(data.listing.license || "All Rights Reserved");
         } else {
           // Sensible defaults derived from the job name.
           setTitle(jobName?.replace(/^\s*\w+\s\d+,\s\d+\s·\s\d+:\d+\s·\s/, "") || "Untitled lithophane");
@@ -59,6 +69,7 @@ export const PublishDialog = ({ jobId, jobName, onClose, onChanged }) => {
         title: title.trim(),
         description: description.trim(),
         price_usd: priceNum,
+        license,
       });
       toast.success(existing ? "Listing updated" : "Published to marketplace");
       onChanged && onChanged({ listed: true });
@@ -191,6 +202,37 @@ export const PublishDialog = ({ jobId, jobName, onClose, onChanged }) => {
             </div>
           </div>
 
+          <div>
+            <label className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-1.5 block">
+              License
+            </label>
+            <Select value={license} onValueChange={setLicense}>
+              <SelectTrigger
+                data-testid="listing-license-select"
+                className="rounded-none bg-zinc-950 border-zinc-800 font-mono text-xs h-9"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-none bg-zinc-950 border-zinc-800 max-h-[60vh]">
+                {LICENSE_PRESETS.map((l) => (
+                  <SelectItem
+                    key={l.id}
+                    value={l.id}
+                    className="font-mono text-xs rounded-none"
+                    data-testid={`license-option-${l.id}`}
+                  >
+                    {l.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="font-mono text-[9px] text-zinc-600 mt-1 leading-relaxed">
+              How buyers may use the downloaded STL/3MF. Personal Use Only
+              blocks resale; CC-BY-NC permits attribution-only non-commercial
+              remixes; CC0 releases to public domain.
+            </div>
+          </div>
+
           <div className="flex gap-2">
             <Button
               onClick={handlePublish}
@@ -213,9 +255,9 @@ export const PublishDialog = ({ jobId, jobName, onClose, onChanged }) => {
           </div>
 
           <div className="font-mono text-[9px] text-zinc-600 leading-relaxed">
-            Phase A: your listing is visible in the marketplace + on your
-            creator profile. Buyer checkout via Stripe ships in the next
-            release.
+            Buyers pay via Stripe; STL/3MF download is auto-delivered.
+            Buyers can re-export with a different printer profile on
+            their end without altering this design.
           </div>
         </div>
       </div>

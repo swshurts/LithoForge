@@ -31,6 +31,8 @@ from fastapi import APIRouter, HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, EmailStr, Field
 
+from email_service import send_purchase_email
+
 # Match the platform-fee constant in marketplace.py (kept here to avoid
 # circular imports; if either ever changes update both).
 PLATFORM_FEE_PCT = 6.0
@@ -101,6 +103,7 @@ def build_checkout_router(db: AsyncIOMotorDatabase) -> APIRouter:
             "job_id": job_id,
             "creator_id": job["user_id"],
             "buyer_email": body.buyer_email,
+            "origin_url": body.origin_url,
             "amount_usd": f"{amount:.2f}",
             "platform_fee_usd": f"{fee:.2f}",
             "creator_payout_usd": f"{creator_payout:.2f}",
@@ -169,6 +172,28 @@ def build_checkout_router(db: AsyncIOMotorDatabase) -> APIRouter:
             token = secrets.token_urlsafe(24)
             update["download_token"] = token
             update["paid_at"] = datetime.now(timezone.utc)
+
+            # Fire-and-forget the buyer email. Failures don't block the
+            # on-page download links from rendering.
+            job = await db.jobs.find_one(
+                {"job_id": txn["job_id"]},
+                {"_id": 0, "user_id": 1, "listing": 1},
+            ) or {}
+            listing = job.get("listing") or {}
+            user = await db.users.find_one(
+                {"user_id": job.get("user_id", "")}, {"_id": 0, "name": 1, "email": 1}
+            ) or {}
+            buyer_origin = ""
+            if isinstance(txn.get("metadata"), dict):
+                buyer_origin = txn["metadata"].get("origin_url", "")
+            await send_purchase_email(
+                to_email=txn["buyer_email"],
+                listing_title=listing.get("title", "Your lithophane"),
+                job_id=txn["job_id"],
+                download_token=token,
+                creator_name=user.get("name") or user.get("email", "the creator"),
+                buyer_origin=buyer_origin,
+            )
         else:
             token = txn.get("download_token")
 
@@ -199,20 +224,43 @@ def build_checkout_router(db: AsyncIOMotorDatabase) -> APIRouter:
         # Idempotent update: only mint the download token if we haven't yet.
         if event.session_id and event.payment_status == "paid":
             txn = await db.payment_transactions.find_one(
-                {"session_id": event.session_id}, {"_id": 0, "download_token": 1}
+                {"session_id": event.session_id}, {"_id": 0}
             )
             if txn and not txn.get("download_token"):
+                token = secrets.token_urlsafe(24)
                 await db.payment_transactions.update_one(
                     {"session_id": event.session_id},
                     {
                         "$set": {
                             "status": "complete",
                             "payment_status": "paid",
-                            "download_token": secrets.token_urlsafe(24),
+                            "download_token": token,
                             "paid_at": datetime.now(timezone.utc),
                             "updated_at": datetime.now(timezone.utc),
                         }
                     },
+                )
+                # Same email logic as the polling path above.
+                job = await db.jobs.find_one(
+                    {"job_id": txn["job_id"]},
+                    {"_id": 0, "user_id": 1, "listing": 1},
+                ) or {}
+                listing = job.get("listing") or {}
+                user = await db.users.find_one(
+                    {"user_id": job.get("user_id", "")},
+                    {"_id": 0, "name": 1, "email": 1},
+                ) or {}
+                buyer_origin = ""
+                if isinstance(txn.get("metadata"), dict):
+                    buyer_origin = txn["metadata"].get("origin_url", "")
+                await send_purchase_email(
+                    to_email=txn["buyer_email"],
+                    listing_title=listing.get("title", "Your lithophane"),
+                    job_id=txn["job_id"],
+                    download_token=token,
+                    creator_name=user.get("name")
+                    or user.get("email", "the creator"),
+                    buyer_origin=buyer_origin,
                 )
         return {"received": True}
 

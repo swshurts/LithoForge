@@ -21,6 +21,7 @@ class ListingIn(BaseModel):
     title: str = Field(min_length=2, max_length=120)
     description: str = Field(default="", max_length=2000)
     price_usd: float = Field(ge=0.0, le=10000.0)
+    license: str = Field(default="All Rights Reserved", max_length=120)
 
 
 class ListingPublic(BaseModel):
@@ -28,6 +29,7 @@ class ListingPublic(BaseModel):
     title: str
     description: str
     price_usd: float
+    license: str = "All Rights Reserved"
     creator_id: str
     creator_name: str
     creator_picture: str = ""
@@ -35,6 +37,10 @@ class ListingPublic(BaseModel):
     render_mode: str
     total_layers: int
     listed_at: str
+    designed_for_printer: str = ""  # printer profile id (display only)
+    width_mm: float = 0.0
+    height_mm: float = 0.0
+    geometry: str = "flat"
 
 
 class ListingDetail(ListingPublic):
@@ -62,11 +68,13 @@ def _job_to_listing_public(
 ) -> ListingPublic:
     listing = job.get("listing", {})
     user = user_map.get(job["user_id"], {})
+    request = job.get("request", {}) or {}
     return ListingPublic(
         job_id=job["job_id"],
         title=listing.get("title", "Untitled"),
         description=listing.get("description", ""),
         price_usd=float(listing.get("price_usd", 0.0)),
+        license=listing.get("license", "All Rights Reserved"),
         creator_id=job["user_id"],
         creator_name=user.get("name") or user.get("email", "Anonymous"),
         creator_picture=user.get("picture", ""),
@@ -74,6 +82,10 @@ def _job_to_listing_public(
         render_mode=job.get("render_mode", "lithophane"),
         total_layers=int(job.get("total_layers", 0)),
         listed_at=_iso(listing.get("listed_at")),
+        designed_for_printer=request.get("printer_id", "") or "",
+        width_mm=float(request.get("width_mm", 0.0) or 0.0),
+        height_mm=float(request.get("height_mm", 0.0) or 0.0),
+        geometry=request.get("geometry", "flat") or "flat",
     )
 
 
@@ -96,6 +108,7 @@ def build_marketplace_router(
             "title": body.title.strip(),
             "description": body.description.strip(),
             "price_usd": float(body.price_usd),
+            "license": body.license.strip() or "All Rights Reserved",
             "visibility": "listed",
             "listed_at": datetime.now(timezone.utc),
         }
@@ -137,6 +150,7 @@ def build_marketplace_router(
                     "thumbnail_base64": 1,
                     "render_mode": 1,
                     "total_layers": 1,
+                    "request": 1,
                 },
             )
             .sort("listing.listed_at", -1)
@@ -187,6 +201,7 @@ def build_marketplace_router(
                     "thumbnail_base64": 1,
                     "render_mode": 1,
                     "total_layers": 1,
+                    "request": 1,
                 },
             )
             .sort("listing.listed_at", -1)

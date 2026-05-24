@@ -327,6 +327,95 @@ class TestDiscGeometry:
         assert tri_count > 0
 
 
+# --- printer profiles + buyer override --------------------------------------
+
+class TestPrinters:
+    def test_catalog(self, client):
+        r = client.get(f"{API}/printers")
+        assert r.status_code == 200
+        data = r.json()
+        assert "printers" in data and len(data["printers"]) >= 8
+        # required keys
+        for p in data["printers"]:
+            for key in ("id", "name", "slicer_family", "bed_x_mm",
+                        "bed_y_mm", "multi_tool", "supported_formats"):
+                assert key in p, f"missing {key} in {p}"
+        ids = {p["id"] for p in data["printers"]}
+        # Sanity: cross-slicer printers are present
+        assert "bambu_x1c" in ids
+        assert "prusa_mk4" in ids
+        assert "flashforge_ad5m" in ids
+        assert "sovol_sv08" in ids
+        assert "generic_orca" in ids
+
+    def test_bed_fit_check(self, client):
+        # Bambu A1 mini has a 180mm bed. A 200mm panel must NOT fit.
+        r = client.get(
+            f"{API}/printers/bambu_a1_mini/fit",
+            params={"width_mm": 200, "height_mm": 200},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["fits"] is False
+        # 150mm panel fits.
+        r2 = client.get(
+            f"{API}/printers/bambu_a1_mini/fit",
+            params={"width_mm": 150, "height_mm": 150},
+        )
+        assert r2.json()["fits"] is True
+
+    def test_export_3mf_picks_up_creator_printer(self, client, uploaded):
+        # Creator chose a multi-tool Bambu X1C → 3MF should embed T<n>
+        # tool changes, not M600.
+        body = {
+            "image_id": uploaded["image_id"],
+            "width_mm": 100.0,
+            "height_mm": 100.0,
+            "thickness_mm": 3.0,
+            "border_mm": 2.0,
+            "layer_height_mm": 0.12,
+            "max_swaps": 4,
+            "geometry": "flat",
+            "printer_id": "bambu_x1c",
+            "license": "CC-BY-NC",
+        }
+        r = client.post(f"{API}/optimize", json=body)
+        assert r.status_code == 200, r.text
+        job_id = r.json()["job_id"]
+        threemf = client.get(f"{API}/export/{job_id}/3mf")
+        assert threemf.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(threemf.content)) as z:
+            cfg = z.read("Metadata/project_settings.config").decode("utf-8")
+            # Multi-tool: tool changes, no M600
+            assert "T1" in cfg or "T2" in cfg or "T3" in cfg
+            assert "M600" not in cfg
+            assert "cmykw_multi_tool" in cfg and "true" in cfg
+            # License is included
+            assert "CC-BY-NC" in cfg
+        # Swap text mirrors the printer choice
+        swaps = client.get(f"{API}/export/{job_id}/swaps").text
+        assert "Bambu" in swaps and "tool change" in swaps
+
+    def test_buyer_override_switches_printer(self, client, optimized):
+        # Default printer is generic_orca (single extruder → M600).
+        # Buyer asks for bambu_x1c (multi-tool → T<n>).
+        job_id = optimized["job_id"]
+        base = client.get(f"{API}/export/{job_id}/3mf")
+        with zipfile.ZipFile(io.BytesIO(base.content)) as z:
+            base_cfg = z.read("Metadata/project_settings.config").decode("utf-8")
+        assert "M600" in base_cfg
+
+        override = client.get(
+            f"{API}/export/{job_id}/3mf", params={"printer": "bambu_x1c"}
+        )
+        assert override.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(override.content)) as z:
+            cfg = z.read("Metadata/project_settings.config").decode("utf-8")
+        assert "M600" not in cfg
+        # Bambu's bed is 256 — that gets baked into printable_area
+        assert "256x256" in cfg
+
+
 # --- legacy status endpoints -----------------------------------------------
 
 class TestLegacyStatus:

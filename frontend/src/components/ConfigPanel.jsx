@@ -13,6 +13,7 @@ import { ModeToggle } from "./ModeToggle";
 import { ImageEditPanel } from "./ImageEditPanel";
 import { PresetManager } from "./PresetManager";
 import { HelpHint } from "./HelpHint";
+import { PrinterSelect } from "./PrinterSelect";
 
 const Row = ({ label, value, unit, children, testid }) => (
   <div className="space-y-2" data-testid={testid}>
@@ -128,6 +129,22 @@ export const ConfigPanel = ({
           </HelpHint>
         </div>
         <div className="space-y-4">
+          <div>
+            <Label className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
+              Target printer
+            </Label>
+            <PrinterSelect
+              value={config.printer_id}
+              onChange={(v) => update("printer_id", v)}
+              disabled={disabled}
+              testId="config-printer-select"
+            />
+            <div className="font-mono text-[9px] text-zinc-600 mt-1 leading-relaxed">
+              Drives bed size, layer-change G-code (M600 vs AMS tool change),
+              and which export formats are recommended.
+            </div>
+          </div>
+
           <div>
             <Label className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
               Shape
@@ -377,6 +394,28 @@ export const ConfigPanel = ({
               />
               <div className="font-mono text-[10px] text-zinc-600 mt-1">
                 0% = flat plateaus · 100% = luminance-driven bas-relief
+              </div>
+            </Row>
+          )}
+
+          {isPainting && (
+            <Row
+              label="Smoothing"
+              value={`${Math.round((config.smoothing ?? 0) * 100)}%`}
+              unit=""
+              testid="row-smoothing"
+            >
+              <Slider
+                data-testid="smoothing-slider"
+                value={[config.smoothing ?? 0]}
+                onValueChange={([v]) => update("smoothing", v)}
+                min={0}
+                max={1}
+                step={0.05}
+                disabled={disabled}
+              />
+              <div className="font-mono text-[10px] text-zinc-600 mt-1">
+                Median pre-pass — reduces speckled boundaries on photos.
               </div>
             </Row>
           )}

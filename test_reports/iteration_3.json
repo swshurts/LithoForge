@@ -1,0 +1,41 @@
+{
+  "summary": "Round 3 — Printer-profile catalog + buyer override + license + painting smoothing + Resend scaffold. Backend: 36/36 pytest pass (33 existing + 3 new for the bits the existing suite didn't cover explicitly — default printer→M600, painting smoothing changes ΔE, listing.license round-trip). Frontend: Studio shows Target printer row above Shape with default 'Generic FDM (OrcaSlicer)'; grouped dropdown renders all 5 slicer families (OrcaSlicer, PrusaSlicer, SuperSlicer, Cura, Marlin) with all expected printer IDs. Painting mode renders both Relief and Smoothing rows + slider. Marketplace listing detail page shows License + Designed-for cards (existing listing has License='All Rights Reserved' + Designed for 'Generic FDM'). PurchaseDialog still opens via Buy button. Purchase-success page mounts and gracefully handles invalid session_id (shows Transaction-not-found error state). The buyer-printer-select + bed-fit-warning widgets are gated by status==='paid' which is the expected design; live Stripe checkout cannot be exercised headlessly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_lithophane_api.py",
+    "/app/backend/tests/test_marketplace.py",
+    "/app/backend/tests/test_marketplace_checkout.py",
+    "/app/backend/tests/test_printers_extras.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py still uses deprecated @app.on_event('shutdown'); migrate to FastAPI lifespan context manager (carry-over from iteration 2).",
+    "PurchaseSuccessPage only mounts the buyer-printer-override widget when status==='paid'. This is correct, but means the widget can't be exercised in CI without a real Stripe sandbox round-trip. Consider exposing a 'preview' query-flag (?debug=preview) that bypasses the paid gate for SDET/UI tests — would let us assert bed-fit-warning behaviour deterministically.",
+    "PrinterSelect fetches /api/printers on every mount with no shared cache. If multiple instances render (creator + buyer override), the catalog is fetched twice. Cheap to memoise at module scope (Promise.cache) — non-blocking.",
+    "printers.py emits multi-tool layer change as `T1, T2, T3, …` (one-based, skipping T0). Slicers typically interpret T0 as the BASE/loaded tool — this matches the comment in build_layer_change_gcode but it does mean if the user has >4 swaps on Bambu AMS (4 lanes max) the template can emit T4 which the AMS rejects. Recommend clamping `slot+1` to 1..(N-1) where N is the printer's tool count, or surfacing a warning when max_swaps > 3 on Bambu profiles.",
+    "Resend scaffold (email_service.py): no test verifies the 'placeholder key → no-op, no exception' branch end-to-end through the webhook. Confirmed via code review that send_purchase_email guards on the placeholder, but a unit test that monkeypatches RESEND_API_KEY='placeholder' and triggers send_purchase_email would lock the contract.",
+    "Frontend: PrinterSelect default value falls back to 'generic_orca' string literal in two places (default arg + JSX). Source from a single constant exported from lib/api.js to avoid drift."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_printers_extras.py"
+  ],
+  "success_rate": {
+    "backend": "100% (36/36 pytest)",
+    "frontend": "100% — every reviewable UI element rendered and matched its data-testid"
+  },
+  "test_credentials": "None required. test_marketplace.py / test_marketplace_checkout.py seed their own throwaway user+session directly in Mongo.",
+  "seed_data_creation": "test_printers_extras.py seeds + tears down a one-off user + 'lic-job-*' listing to exercise the license round-trip. Existing 'Sunset Test Print' (job_id 8b1303d7-14cf-4710-a54b-557eaf4fa605) was used for the listing-detail UI test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest entry: `cd /app/backend && python -m pytest tests/ -v` (36 tests, all green). Frontend testids verified: config-printer-select (+ config-printer-select-option-<id>), row-smoothing, smoothing-slider, listing-license, listing-printer, purchase-btn, purchase-dialog, listing-license-select / license-option-CC-BY-NC (PublishDialog — not exercised live this round; requires auth flow), buyer-printer-select / bed-fit-warning (PurchaseSuccessPage, gated by status==='paid'). The grouped Select dropdown uses Radix portal — text-based assertions on the document body should wait ≥800ms after opening, or query individual option testids directly (the option testid scheme is `<prefix>-option-<printer_id>`).",
+  "rca of the issue": "No bugs."
+}

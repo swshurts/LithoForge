@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { CheckCircle2, Download, FileArchive, FileText } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileArchive, FileText } from "lucide-react";
 import { MarketplaceHeader } from "./MarketplaceHeader";
+import { PrinterSelect } from "../PrinterSelect";
 import {
+  checkBedFit,
   getCheckoutStatus,
   getListingDetail,
   tokenExportUrl,
@@ -27,6 +29,8 @@ export const PurchaseSuccessPage = () => {
   const [token, setToken] = useState(null);
   const [listing, setListing] = useState(null);
   const [error, setError] = useState("");
+  const [buyerPrinter, setBuyerPrinter] = useState(null); // null = use creator's
+  const [bedFit, setBedFit] = useState(null); // {fits, bed_x_mm, bed_y_mm, printer_name}
   const pollsRef = useRef(0);
 
   useEffect(() => {
@@ -93,6 +97,30 @@ export const PurchaseSuccessPage = () => {
     };
   }, [jobId]);
 
+  // Whenever the buyer changes printer, check if the design fits their bed.
+  useEffect(() => {
+    if (!buyerPrinter || !listing) {
+      setBedFit(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await checkBedFit(
+          buyerPrinter,
+          listing.width_mm || 0,
+          listing.height_mm || 0,
+        );
+        if (!cancelled) setBedFit(r);
+      } catch {
+        if (!cancelled) setBedFit(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [buyerPrinter, listing]);
+
   return (
     <div
       className="min-h-screen flex flex-col bg-zinc-950 text-zinc-100"
@@ -144,9 +172,46 @@ export const PurchaseSuccessPage = () => {
               </div>
             )}
 
+            <div
+              className="border border-zinc-800 p-4 space-y-3"
+              data-testid="buyer-printer-override"
+            >
+              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+                Re-export for your printer{" "}
+                <span className="text-zinc-700 normal-case tracking-normal">
+                  (optional)
+                </span>
+              </div>
+              <PrinterSelect
+                value={buyerPrinter || (listing?.designed_for_printer || "generic_orca")}
+                onChange={setBuyerPrinter}
+                testId="buyer-printer-select"
+              />
+              {bedFit && !bedFit.fits && (
+                <div
+                  className="flex items-start gap-2 border border-amber-900 bg-amber-950/40 p-2 font-mono text-[10px] text-amber-300"
+                  data-testid="bed-fit-warning"
+                >
+                  <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                  <div className="leading-relaxed">
+                    Warning: this design is {listing.width_mm}×{listing.height_mm}mm
+                    but the {bedFit.printer_name} bed is only{" "}
+                    {bedFit.bed_x_mm}×{bedFit.bed_y_mm}mm. You'll need
+                    to scale it down in your slicer.
+                  </div>
+                </div>
+              )}
+              <div className="font-mono text-[9px] text-zinc-600 leading-relaxed">
+                Defaults to the creator's choice (
+                {listing?.designed_for_printer || "generic FDM"}). Picking a
+                different printer regenerates the 3MF/STL with that
+                printer's auto-pause flavour (M600 vs AMS tool change).
+              </div>
+            </div>
+
             <div className="grid sm:grid-cols-3 gap-3">
               <a
-                href={tokenExportUrl(jobId, "stl", token)}
+                href={tokenExportUrl(jobId, "stl", token, buyerPrinter)}
                 download
                 data-testid="download-stl"
                 className="flex flex-col items-center justify-center gap-2 border border-zinc-800 hover:border-zinc-400 bg-zinc-900 py-6 transition-colors"
@@ -157,7 +222,7 @@ export const PurchaseSuccessPage = () => {
                 </span>
               </a>
               <a
-                href={tokenExportUrl(jobId, "3mf", token)}
+                href={tokenExportUrl(jobId, "3mf", token, buyerPrinter)}
                 download
                 data-testid="download-3mf"
                 className="flex flex-col items-center justify-center gap-2 border border-zinc-800 hover:border-zinc-400 bg-zinc-900 py-6 transition-colors"
@@ -168,7 +233,7 @@ export const PurchaseSuccessPage = () => {
                 </span>
               </a>
               <a
-                href={tokenExportUrl(jobId, "swaps", token)}
+                href={tokenExportUrl(jobId, "swaps", token, buyerPrinter)}
                 download
                 data-testid="download-swaps"
                 className="flex flex-col items-center justify-center gap-2 border border-zinc-800 hover:border-zinc-400 bg-zinc-900 py-6 transition-colors"

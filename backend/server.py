@@ -27,6 +27,7 @@ from lithophane import (
     rendered_to_png_bytes,
 )
 from palette_suggest import FILAMENT_LIBRARY, suggest_palette
+from printers import fits_on_bed, get_profile, list_profiles
 from auth import build_auth
 from presets import build_presets_router
 from jobs_history import (
@@ -103,6 +104,9 @@ class OptimizeIn(BaseModel):
     auto_order: bool = True
     render_mode: Literal["lithophane", "painting"] = "lithophane"
     relief: float = 0.5              # painting mode only, 0..1
+    smoothing: float = 0.0           # painting mode only — 0..1, softens speckle
+    printer_id: str = "generic_orca"  # printer profile id from /api/printers
+    license: str = ""                 # creator-declared license (free text or preset)
 
 
 class OptimizeOut(BaseModel):
@@ -202,6 +206,27 @@ async def filament_library() -> Dict[str, List[Dict[str, Any]]]:
                           for f in FILAMENT_LIBRARY]}
 
 
+@api_router.get("/printers")
+async def printers_catalog() -> Dict[str, List[Dict[str, Any]]]:
+    """Catalog of supported printers (grouped client-side by slicer family)."""
+    return {"printers": [dict(p) for p in list_profiles()]}
+
+
+@api_router.get("/printers/{printer_id}/fit")
+async def printer_bed_fit(
+    printer_id: str, width_mm: float, height_mm: float
+) -> Dict[str, Any]:
+    """Returns whether a width × height design fits this printer's bed."""
+    profile = get_profile(printer_id)
+    return {
+        "printer_id": profile["id"],
+        "printer_name": profile["name"],
+        "bed_x_mm": profile["bed_x_mm"],
+        "bed_y_mm": profile["bed_y_mm"],
+        "fits": fits_on_bed(profile, width_mm, height_mm),
+    }
+
+
 class SuggestIn(BaseModel):
     image_id: str
     palette_size: int = 6
@@ -261,6 +286,7 @@ async def optimize_endpoint(
         auto_order=body.auto_order,
         render_mode=body.render_mode,
         relief=body.relief,
+        smoothing=body.smoothing,
     )
 
     # Disc geometry: mask preview/heightmap to a circle so the user sees
@@ -365,7 +391,7 @@ async def get_job(job_id: str) -> Dict[str, Any]:
     }
 
 
-def _build_export(job_id: str) -> Dict[str, Any]:
+def _build_export(job_id: str, printer_override: Optional[str] = None) -> Dict[str, Any]:
     job = JOBS.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
@@ -378,6 +404,7 @@ def _build_export(job_id: str) -> Dict[str, Any]:
         curve_radius_mm=req["curve_radius_mm"],
         dome_mm=float(req.get("dome_mm", 0.0)),
     )
+    printer_id = printer_override or req.get("printer_id") or "generic_orca"
     export = build_export(
         layer_map=job["layer_map"],
         layer_height_mm=job["layer_height_mm"],
@@ -385,6 +412,8 @@ def _build_export(job_id: str) -> Dict[str, Any]:
         filament_names=[f.name for f in job["filaments"]],
         swap_heights_mm=job["swap_heights_mm"],
         swap_colors=job["swap_colors"],
+        printer_id=printer_id,
+        license_text=req.get("license", "") or "",
     )
     return export
 
@@ -423,12 +452,13 @@ async def export_stl(
     job_id: str,
     current_user=Depends(get_current_user_dep),
     token: Optional[str] = None,
+    printer: Optional[str] = None,
 ) -> Response:
     if token:
         await _ensure_job_for_paid_buyer(job_id, token)
     else:
         await _ensure_job_in_memory(job_id, current_user)
-    export = _build_export(job_id)
+    export = _build_export(job_id, printer_override=printer)
     return Response(
         content=export["stl"],
         media_type="model/stl",
@@ -441,12 +471,13 @@ async def export_swaps(
     job_id: str,
     current_user=Depends(get_current_user_dep),
     token: Optional[str] = None,
+    printer: Optional[str] = None,
 ) -> Response:
     if token:
         await _ensure_job_for_paid_buyer(job_id, token)
     else:
         await _ensure_job_in_memory(job_id, current_user)
-    export = _build_export(job_id)
+    export = _build_export(job_id, printer_override=printer)
     return Response(
         content=export["swap_txt"],
         media_type="text/plain",
@@ -459,12 +490,13 @@ async def export_3mf(
     job_id: str,
     current_user=Depends(get_current_user_dep),
     token: Optional[str] = None,
+    printer: Optional[str] = None,
 ) -> Response:
     if token:
         await _ensure_job_for_paid_buyer(job_id, token)
     else:
         await _ensure_job_in_memory(job_id, current_user)
-    export = _build_export(job_id)
+    export = _build_export(job_id, printer_override=printer)
     return Response(
         content=export["threemf"],
         media_type="model/3mf",
