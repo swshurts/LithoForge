@@ -39,7 +39,7 @@ def build_presets_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/presets", tags=["presets"])
 
-    def _to_iso(dt):
+    def _to_iso(dt: Any) -> str:
         if isinstance(dt, str):
             return dt
         if isinstance(dt, datetime):
@@ -58,7 +58,7 @@ def build_presets_router(
         )
 
     @router.get("", response_model=List[PresetOut])
-    async def list_presets(user=Depends(require_user)):
+    async def list_presets(user=Depends(require_user)) -> List[PresetOut]:
         cursor = db.presets.find(
             {"user_id": user.user_id}, {"_id": 0}
         ).sort("updated_at", -1)
@@ -66,7 +66,9 @@ def build_presets_router(
         return [_doc_to_out(d) for d in docs]
 
     @router.post("", response_model=PresetOut)
-    async def create_preset(body: PresetIn, user=Depends(require_user)):
+    async def create_preset(
+        body: PresetIn, user=Depends(require_user)
+    ) -> PresetOut:
         # Reject duplicate name within the same user's collection.
         existing = await db.presets.find_one(
             {"user_id": user.user_id, "name": body.name}, {"_id": 0}
@@ -88,7 +90,9 @@ def build_presets_router(
         return _doc_to_out(doc)
 
     @router.delete("/{preset_id}")
-    async def delete_preset(preset_id: str, user=Depends(require_user)):
+    async def delete_preset(
+        preset_id: str, user=Depends(require_user)
+    ) -> Dict[str, bool]:
         result = await db.presets.delete_one(
             {"user_id": user.user_id, "preset_id": preset_id}
         )
@@ -99,7 +103,7 @@ def build_presets_router(
     @router.post("/import", response_model=List[PresetOut])
     async def import_presets(
         body: List[PresetIn], user=Depends(require_user)
-    ):
+    ) -> List[PresetOut]:
         """One-shot import of the user's localStorage presets after first
         login. Skips any preset whose name already exists in the cloud
         (so re-importing is idempotent)."""

@@ -29,7 +29,13 @@ from lithophane import (
 from palette_suggest import FILAMENT_LIBRARY, suggest_palette
 from auth import build_auth
 from presets import build_presets_router
-from jobs_history import build_jobs_router, persist_job, load_job, hydrate_in_memory_job
+from jobs_history import (
+    JobPersistData,
+    build_jobs_router,
+    hydrate_in_memory_job,
+    load_job,
+    persist_job,
+)
 from marketplace import build_marketplace_router
 
 
@@ -148,7 +154,7 @@ def _filaments_from_input(fils: Optional[List[FilamentIn]]) -> List[Filament]:
 # ---------------------------------------------------------------------------
 
 @api_router.get("/")
-async def root():
+async def root() -> Dict[str, str]:
     return {"message": "CMYKW Lithophane API"}
 
 
@@ -166,7 +172,7 @@ class ClientErrorReport(BaseModel):
 
 
 @api_router.post("/client-error")
-async def client_error(body: ClientErrorReport):
+async def client_error(body: ClientErrorReport) -> Dict[str, bool]:
     """Capture uncaught client-side errors so we can debug iPad/Safari
     failures without requiring screenshots from the user."""
     logger.error(
@@ -181,13 +187,13 @@ async def client_error(body: ClientErrorReport):
 
 
 @api_router.get("/filaments/default")
-async def default_filaments():
+async def default_filaments() -> Dict[str, List[Dict[str, Any]]]:
     return {"filaments": [{"name": f.name, "hex": f.hex, "td": f.td}
                           for f in DEFAULT_FILAMENTS]}
 
 
 @api_router.get("/filaments/library")
-async def filament_library():
+async def filament_library() -> Dict[str, List[Dict[str, Any]]]:
     """The full curated filament library used by the palette suggester."""
     return {"filaments": [{"name": f.name, "hex": f.hex, "td": f.td}
                           for f in FILAMENT_LIBRARY]}
@@ -200,7 +206,9 @@ class SuggestIn(BaseModel):
 
 
 @api_router.post("/palette/suggest")
-async def suggest_palette_endpoint(body: SuggestIn):
+async def suggest_palette_endpoint(
+    body: SuggestIn,
+) -> Dict[str, List[Dict[str, Any]]]:
     if body.image_id not in UPLOADS:
         raise HTTPException(status_code=404, detail="image_id not found")
     image = UPLOADS[body.image_id]
@@ -215,7 +223,7 @@ async def suggest_palette_endpoint(body: SuggestIn):
 
 
 @api_router.post("/upload", response_model=UploadOut)
-async def upload(body: UploadIn):
+async def upload(body: UploadIn) -> UploadOut:
     img = _decode_image(body.image_base64)
     # Clamp to reasonable dimensions to avoid memory blow-up before optimizer
     # down-samples it.
@@ -234,7 +242,7 @@ async def upload(body: UploadIn):
 async def optimize_endpoint(
     body: OptimizeIn,
     current_user=Depends(get_current_user_dep),
-):
+) -> OptimizeOut:
     if body.image_id not in UPLOADS:
         raise HTTPException(status_code=404, detail="image_id not found")
     image = UPLOADS[body.image_id]
@@ -289,20 +297,22 @@ async def optimize_endpoint(
             await persist_job(
                 db,
                 current_user.user_id,
-                job_id=job_id,
-                request=body.model_dump(),
-                filaments=result.filaments,
-                layer_map=result.layer_map,
-                layer_height_mm=result.layer_height_mm,
-                swap_heights_mm=result.swap_heights_mm,
-                swap_colors=result.swap_colors,
-                allocation=result.layer_allocation,
-                total_layers=result.total_layers,
-                delta_e_mean=result.delta_e_mean,
-                delta_e_p95=result.delta_e_p95,
-                preview_png_base64=preview,
-                heightmap_png_base64=heightmap,
-                timeline=timeline,
+                JobPersistData(
+                    job_id=job_id,
+                    request=body.model_dump(),
+                    filaments=result.filaments,
+                    layer_map=result.layer_map,
+                    layer_height_mm=result.layer_height_mm,
+                    swap_heights_mm=result.swap_heights_mm,
+                    swap_colors=result.swap_colors,
+                    allocation=result.layer_allocation,
+                    total_layers=result.total_layers,
+                    delta_e_mean=result.delta_e_mean,
+                    delta_e_p95=result.delta_e_p95,
+                    preview_png_base64=preview,
+                    heightmap_png_base64=heightmap,
+                    timeline=timeline,
+                ),
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not persist job %s: %s", job_id, exc)
@@ -323,7 +333,7 @@ async def optimize_endpoint(
 
 
 @api_router.get("/jobs/{job_id}")
-async def get_job(job_id: str):
+async def get_job(job_id: str) -> Dict[str, Any]:
     job = JOBS.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
@@ -374,7 +384,9 @@ async def _ensure_job_in_memory(job_id: str, current_user) -> None:
 
 
 @api_router.get("/export/{job_id}/stl")
-async def export_stl(job_id: str, current_user=Depends(get_current_user_dep)):
+async def export_stl(
+    job_id: str, current_user=Depends(get_current_user_dep)
+) -> Response:
     await _ensure_job_in_memory(job_id, current_user)
     export = _build_export(job_id)
     return Response(
@@ -385,7 +397,9 @@ async def export_stl(job_id: str, current_user=Depends(get_current_user_dep)):
 
 
 @api_router.get("/export/{job_id}/swaps")
-async def export_swaps(job_id: str, current_user=Depends(get_current_user_dep)):
+async def export_swaps(
+    job_id: str, current_user=Depends(get_current_user_dep)
+) -> Response:
     await _ensure_job_in_memory(job_id, current_user)
     export = _build_export(job_id)
     return Response(
@@ -396,7 +410,9 @@ async def export_swaps(job_id: str, current_user=Depends(get_current_user_dep)):
 
 
 @api_router.get("/export/{job_id}/3mf")
-async def export_3mf(job_id: str, current_user=Depends(get_current_user_dep)):
+async def export_3mf(
+    job_id: str, current_user=Depends(get_current_user_dep)
+) -> Response:
     await _ensure_job_in_memory(job_id, current_user)
     export = _build_export(job_id)
     return Response(
@@ -409,7 +425,7 @@ async def export_3mf(job_id: str, current_user=Depends(get_current_user_dep)):
 # ---- Legacy status demo endpoints (kept for template compatibility) ------
 
 @api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
+async def create_status_check(input: StatusCheckCreate) -> StatusCheck:
     status_obj = StatusCheck(**input.model_dump())
     doc = status_obj.model_dump()
     doc["timestamp"] = doc["timestamp"].isoformat()
@@ -418,7 +434,7 @@ async def create_status_check(input: StatusCheckCreate):
 
 
 @api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
+async def get_status_checks() -> List[Dict[str, Any]]:
     status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
     for check in status_checks:
         if isinstance(check["timestamp"], str):
@@ -448,5 +464,5 @@ app.add_middleware(
 
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
+async def shutdown_db_client() -> None:
     client.close()

@@ -79,54 +79,67 @@ def _iso(dt) -> str:
     return ""
 
 
+from dataclasses import dataclass
+
+
+@dataclass
+class JobPersistData:
+    """All fields needed to persist a completed optimize job to MongoDB.
+
+    Bundled into a dataclass so call-sites don't pass 14+ positional/
+    keyword args (which is fragile when fields are added).
+    """
+    job_id: str
+    request: Dict[str, Any]
+    filaments: List[Any]
+    layer_map: np.ndarray
+    layer_height_mm: float
+    swap_heights_mm: List[float]
+    swap_colors: List[str]
+    allocation: List[int]
+    total_layers: int
+    delta_e_mean: float
+    delta_e_p95: float
+    preview_png_base64: str
+    heightmap_png_base64: str
+    timeline: List[Dict[str, Any]]
+
+
 async def persist_job(
     db: AsyncIOMotorDatabase,
     user_id: str,
-    *,
-    job_id: str,
-    request: Dict[str, Any],
-    filaments: List[Any],
-    layer_map: np.ndarray,
-    layer_height_mm: float,
-    swap_heights_mm: List[float],
-    swap_colors: List[str],
-    allocation: List[int],
-    total_layers: int,
-    delta_e_mean: float,
-    delta_e_p95: float,
-    preview_png_base64: str,
-    heightmap_png_base64: str,
-    timeline: List[Dict[str, Any]],
+    data: JobPersistData,
 ) -> None:
     """Called from /api/optimize when a logged-in user finishes a job."""
     now = datetime.now(timezone.utc)
     auto_name = (
         f"{now.strftime('%b %d, %Y · %H:%M')} · "
-        f"{len(filaments)} filaments · {total_layers} layers"
+        f"{len(data.filaments)} filaments · {data.total_layers} layers"
     )
-    thumbnail = _shrink_png_for_thumb(preview_png_base64)
+    thumbnail = _shrink_png_for_thumb(data.preview_png_base64)
     doc = {
-        "job_id": job_id,
+        "job_id": data.job_id,
         "user_id": user_id,
         "name": auto_name,
         "created_at": now,
-        "render_mode": request.get("render_mode", "lithophane"),
-        "request": request,
+        "render_mode": data.request.get("render_mode", "lithophane"),
+        "request": data.request,
         "filaments": [
-            {"name": f.name, "hex": f.hex, "td": float(f.td)} for f in filaments
+            {"name": f.name, "hex": f.hex, "td": float(f.td)}
+            for f in data.filaments
         ],
-        "allocation": list(allocation),
-        "total_layers": int(total_layers),
-        "delta_e_mean": float(delta_e_mean),
-        "delta_e_p95": float(delta_e_p95),
-        "swap_heights_mm": list(swap_heights_mm),
-        "swap_colors": list(swap_colors),
-        "layer_height_mm": float(layer_height_mm),
-        "layer_map_b64": _layer_map_to_b64(layer_map),
-        "preview_png_base64": preview_png_base64,
-        "heightmap_png_base64": heightmap_png_base64,
+        "allocation": list(data.allocation),
+        "total_layers": int(data.total_layers),
+        "delta_e_mean": float(data.delta_e_mean),
+        "delta_e_p95": float(data.delta_e_p95),
+        "swap_heights_mm": list(data.swap_heights_mm),
+        "swap_colors": list(data.swap_colors),
+        "layer_height_mm": float(data.layer_height_mm),
+        "layer_map_b64": _layer_map_to_b64(data.layer_map),
+        "preview_png_base64": data.preview_png_base64,
+        "heightmap_png_base64": data.heightmap_png_base64,
         "thumbnail_base64": thumbnail,
-        "timeline": timeline,
+        "timeline": data.timeline,
     }
     await db.jobs.insert_one(doc)
 

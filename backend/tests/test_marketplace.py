@@ -108,7 +108,7 @@ def test_publish_and_browse_marketplace(client, authed_user):
     # Browse (public, no auth)
     r = client.get("/api/marketplace")
     assert r.status_code == 200
-    titles = [l["title"] for l in r.json()]
+    titles = [lst["title"] for lst in r.json()]
     assert "Test Lithophane" in titles
 
     # Detail (public, no auth)
