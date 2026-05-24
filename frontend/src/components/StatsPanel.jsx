@@ -269,7 +269,7 @@ export const StatsPanel = ({
             filename={result ? `lithophane_${result.job_id}_swaps.txt` : "lithophane_swaps.txt"}
             icon={FileText}
             label="Swap instructions"
-            sub="M600 + Z heights"
+            sub="Paste-ready for Prusa/Orca/Bambu/Cura"
             testid="download-swaps"
           />
           <DownloadButton
@@ -277,7 +277,7 @@ export const StatsPanel = ({
             filename={result ? `lithophane_${result.job_id}.3mf` : "lithophane.3mf"}
             icon={Layers}
             label="3MF bundle"
-            sub="Mesh + filament metadata"
+            sub="Mesh + auto-pause at swap layers"
             testid="download-3mf"
           />
         </div>

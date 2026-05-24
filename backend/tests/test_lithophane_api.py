@@ -242,9 +242,12 @@ class TestExports:
         assert "text/plain" in r.headers.get("content-type", "")
         text = r.text
         assert "M600" in text
-        # At least one swap line per filament
-        m600_lines = [ln for ln in text.splitlines() if "M600" in ln]
-        assert len(m600_lines) >= len(optimized["filaments"])
+        # New paste-ready snippet sections must all be present
+        assert "OPTION A" in text and "PrusaSlicer" in text
+        assert "OPTION B" in text and "Cura" in text
+        assert "OPTION C" in text and "Marlin" in text
+        # Conditional Slic3r-family snippet present
+        assert "{if layer_num ==" in text and "{endif}" in text
 
     def test_3mf(self, client, optimized):
         r = client.get(f"{API}/export/{optimized['job_id']}/3mf")
@@ -257,6 +260,11 @@ class TestExports:
             assert "[Content_Types].xml" in names
             model = z.read("3D/3dmodel.model").decode("utf-8")
             assert "<vertices>" in model and "<triangles>" in model
+            # Project config must include the auto-pause snippet
+            cfg = z.read("Metadata/project_settings.config").decode("utf-8")
+            assert "layer_change_gcode" in cfg
+            assert "M600" in cfg
+            assert "{if layer_num ==" in cfg
 
     def test_export_unknown_job(self, client):
         for kind in ("stl", "swaps", "3mf"):

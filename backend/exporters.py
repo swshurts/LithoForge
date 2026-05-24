@@ -261,8 +261,55 @@ def write_stl_binary(vertices: np.ndarray, faces: np.ndarray) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Swap-instruction text
+# Swap-instruction text + slicer paste-ready snippets
 # ---------------------------------------------------------------------------
+
+def _build_slic3r_family_snippet(layer_indices: List[int]) -> str:
+    """Conditional `{if layer_num==X}M600{endif}` blocks for PrusaSlicer /
+    SuperSlicer / OrcaSlicer / Bambu Studio. Paste into:
+        Printer Settings → Custom G-code → Before layer change G-code
+
+    layer_num is 0-indexed in PrusaSlicer; the first useful pause is at
+    the FIRST layer of the new colour, not the boundary layer beneath it,
+    so we use the same indices we report to humans (1-indexed boundaries
+    converted to 0-indexed via i-1)."""
+    if not layer_indices:
+        return "; no colour swaps in this print\n"
+    parts: List[str] = []
+    for idx in layer_indices:
+        parts.append(f"{{if layer_num == {idx}}}M600{{endif}}")
+    return "\n".join(parts) + "\n"
+
+
+def _build_cura_postprocess_note(
+    layer_indices: List[int], filament_names: List[str]
+) -> str:
+    """Cura doesn't support inline templating, so we tell the user to
+    use the built-in 'Filament Change' post-processing script."""
+    lines = [
+        "; Cura users:",
+        ";   Extensions → Post Processing → Modify G-Code → 'Filament Change'",
+        ";   Add one entry per row below (layer number, optional retract).",
+    ]
+    for idx, name in zip(layer_indices, filament_names[1:]):
+        lines.append(f";   layer={idx}  → swap to {name}")
+    return "\n".join(lines) + "\n"
+
+
+def _build_marlin_raw_snippet(
+    swap_heights_mm: List[float], filament_names: List[str]
+) -> str:
+    """Raw M600s at known Z values. For users that want to drop them in
+    by hand or via a post-processor (e.g. octoprint plugin). The first
+    filament is loaded BEFORE the print, so no M600 is needed for it."""
+    if len(swap_heights_mm) <= 1:
+        return "; no swaps required\n"
+    lines = [f"; BASE filament loaded at print start: {filament_names[0]}"]
+    for z, name in zip(swap_heights_mm[1:], filament_names[1:]):
+        lines.append(f"; Z={z:.3f}mm — load {name}")
+        lines.append("M600")
+    return "\n".join(lines) + "\n"
+
 
 def build_swap_instructions(
     swap_heights_mm: List[float],
@@ -270,18 +317,79 @@ def build_swap_instructions(
     filament_names: List[str],
     layer_height_mm: float,
 ) -> str:
-    lines = [
-        "# CMYKW Lithophane — Colour Swap Instructions",
-        f"# layer_height_mm = {layer_height_mm}",
-        "# Load filaments in this order bottom → top.",
-        "#",
+    """Generate a paste-ready, multi-slicer swap-instruction document.
+
+    Includes:
+      • Plain-language summary table
+      • Slic3r-family conditional snippet (PrusaSlicer / SuperSlicer /
+        OrcaSlicer / Bambu Studio)
+      • Cura post-processor note
+      • Raw Marlin G-code
+
+    The FIRST entry in swap_heights_mm is the base filament loaded at
+    Z=0, so the actual swap layers are entries 1..N. Layer indices here
+    use the 0-based numbering that PrusaSlicer's `layer_num` variable
+    uses (layer 0 = first printed layer)."""
+    # swap_heights_mm[i] is the Z at which `filament_names[i]` becomes
+    # active. The first item is the base filament (Z=0), so M600s only
+    # fire for items 1..N at their start-Z.
+    swap_layer_indices: List[int] = []
+    for z in swap_heights_mm[1:]:
+        swap_layer_indices.append(max(1, int(round(z / layer_height_mm))))
+
+    lines: List[str] = [
+        "; ====================================================================",
+        "; CMYKW Lithophane — Colour Swap Instructions",
+        f";   layer_height = {layer_height_mm} mm",
+        f";   colour swaps = {len(swap_layer_indices)}",
+        "; ====================================================================",
+        ";",
+        "; ----- Filament load order (bottom -> top) -----",
     ]
-    for z, c, name in zip(swap_heights_mm, swap_colors, filament_names):
-        layer_idx = int(round(z / layer_height_mm))
-        lines.append(
-            f"M600 ; swap to {name} ({c}) at Z={z:.3f}mm (layer {layer_idx})"
-        )
-    lines.append("# End of swap instructions")
+    for i, (z, c, name) in enumerate(
+        zip(swap_heights_mm, swap_colors, filament_names)
+    ):
+        marker = "BASE" if i == 0 else f"SWAP {i}"
+        lines.append(f";   {marker:<7} Z={z:6.3f}mm  {name:<14} {c}")
+    lines.append(";")
+
+    lines.append(
+        "; ====================================================================="
+    )
+    lines.append(
+        "; OPTION A — Paste into your slicer's 'Before layer change G-code':"
+    )
+    lines.append(
+        ";   Works in: PrusaSlicer / SuperSlicer / OrcaSlicer / Bambu Studio"
+    )
+    lines.append(
+        "; ====================================================================="
+    )
+    lines.append(_build_slic3r_family_snippet(swap_layer_indices).rstrip())
+
+    lines.append("")
+    lines.append(
+        "; ====================================================================="
+    )
+    lines.append("; OPTION B — Cura (uses post-processing script, not custom G-code):")
+    lines.append(
+        "; ====================================================================="
+    )
+    lines.append(
+        _build_cura_postprocess_note(swap_layer_indices, filament_names).rstrip()
+    )
+
+    lines.append("")
+    lines.append(
+        "; ====================================================================="
+    )
+    lines.append("; OPTION C — Raw Marlin G-code (drop in via post-processor):")
+    lines.append(
+        "; ====================================================================="
+    )
+    lines.append(_build_marlin_raw_snippet(swap_heights_mm, filament_names).rstrip())
+    lines.append("")
+    lines.append("; End of swap instructions")
     return "\n".join(lines) + "\n"
 
 
@@ -333,16 +441,44 @@ def _project_config(
     swap_heights_mm: List[float],
     layer_height_mm: float,
 ) -> str:
-    """Bambu-compatible project settings subset."""
+    """Bambu/Orca/Prusa-compatible project settings subset.
+
+    Crucially we embed a `layer_change_gcode` template made of conditional
+    `{if layer_num==X}M600{endif}` blocks, so a slicer that opens this
+    3MF and respects the per-project layer_change_gcode field will
+    automatically pause + prompt for filament at every swap layer —
+    no manual UI clicking required.
+    """
     colours = [c for _, c in filaments]
     names = [n for n, _ in filaments]
+
+    # Build the conditional snippet only for the actual swap layers
+    # (skip the base filament loaded at Z=0).
+    swap_layer_indices: List[int] = []
+    for z in swap_heights_mm[1:]:
+        swap_layer_indices.append(max(1, int(round(z / layer_height_mm))))
+    layer_change_gcode = "\n".join(
+        f"{{if layer_num == {i}}}M600{{endif}}" for i in swap_layer_indices
+    )
+
     cfg = {
+        # Slic3r-family / Bambu Studio honour these keys when importing
+        # filament colours from a project file.
         "filament_colour": colours,
         "filament_type": ["PLA"] * len(colours),
         "filament_settings_id": names,
         "layer_height": layer_height_mm,
+
+        # Automatic colour-swap pauses on import. The conditional syntax
+        # is shared by PrusaSlicer, SuperSlicer, OrcaSlicer, Bambu Studio.
+        "before_layer_change_gcode": layer_change_gcode,
+        "layer_change_gcode": layer_change_gcode,
+
+        # Reference data the slicer doesn't need but useful for
+        # post-processors / tooling that read this file.
         "cmykw_swap_heights_mm": swap_heights_mm,
         "cmykw_swap_colors": colours,
+        "cmykw_swap_layers": swap_layer_indices,
     }
     return json.dumps(cfg, indent=2)
 

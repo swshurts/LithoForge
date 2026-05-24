@@ -182,6 +182,26 @@
       `/creator/:id`.
 - [x] **Tests**: 5 new marketplace tests + 17 existing = 22/22 passing.
 
+## Implemented (2026-02-24) — Auto-pause slicer integration (Option B + C)
+- [x] **3MF auto-pause** (Option B): `Metadata/project_settings.config`
+      now embeds `before_layer_change_gcode` + `layer_change_gcode`
+      with a chain of `{if layer_num == X}M600{endif}` blocks — one per
+      colour swap. PrusaSlicer / SuperSlicer / OrcaSlicer / Bambu Studio
+      honour this on project import, so the printer pauses + prompts
+      for filament at every swap layer **without any manual UI clicks
+      in the slicer**.
+- [x] **Slicer-paste swap text** (Option C): `exports/swaps.txt` is now
+      a paste-ready, multi-slicer document with three labelled sections:
+      - OPTION A: Slic3r-family conditional snippet (Prusa/Orca/Bambu)
+      - OPTION B: Cura post-processing instructions (per-layer entries)
+      - OPTION C: Raw Marlin M600s at known Z heights
+      Plus a load-order summary table at the top.
+- [x] StatsPanel labels updated so users know the new output is
+      slicer-aware ("Paste-ready for Prusa/Orca/Bambu/Cura",
+      "Mesh + auto-pause at swap layers").
+- [x] Tests upgraded to require OPTION A/B/C markers + the conditional
+      snippet inside the 3MF config (29/29 still pass).
+
 ## Implemented (2026-02-24) — Circular disc geometry + Marketplace Phase B (guest checkout)
 - [x] **New geometry: Circular disc** — round (coaster-shaped) print with
       optional gentle dome curvature on the top face. Backend masks the
