@@ -9,7 +9,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response
@@ -96,12 +96,12 @@ class OptimizeIn(BaseModel):
     border_mm: float = 2.0
     layer_height_mm: float = 0.12
     max_swaps: int = 5
-    geometry: str = "flat"     # flat | curved | cylindrical | disc
+    geometry: Literal["flat", "curved", "cylindrical", "disc"] = "flat"
     curve_radius_mm: float = 80.0
     dome_mm: float = 0.0       # disc: gentle dome bump (mm) atop the disc
     filaments: Optional[List[FilamentIn]] = None
     auto_order: bool = True
-    render_mode: str = "lithophane"  # "lithophane" | "painting"
+    render_mode: Literal["lithophane", "painting"] = "lithophane"
     relief: float = 0.5              # painting mode only, 0..1
 
 

@@ -182,6 +182,55 @@
       `/creator/:id`.
 - [x] **Tests**: 5 new marketplace tests + 17 existing = 22/22 passing.
 
+## Implemented (2026-02-24) — Circular disc geometry + Marketplace Phase B (guest checkout)
+- [x] **New geometry: Circular disc** — round (coaster-shaped) print with
+      optional gentle dome curvature on the top face. Backend masks the
+      inscribed circle out of the rectangular layer grid, the STL/3MF
+      exporter only emits triangles where all 4 cell corners lie inside
+      the circle and traces side walls along the masked boundary so the
+      mesh stays watertight.
+      - `exporters.GeometrySpec.mode` accepts `"disc"`; `dome_mm` adds
+        `(1 − r²) · dome_mm` to z_top for a gentle dome bump.
+      - `/api/optimize` accepts `geometry: "disc"` + `dome_mm: float`;
+        preview PNG is masked to the inscribed circle (black corners)
+        so the user sees the actual print shape.
+      - ConfigPanel relabels Width → Diameter when disc is selected,
+        keeps width/height in sync, hides curve_radius, shows Dome slider.
+- [x] **Marketplace Phase B — guest Stripe Checkout** (anonymous buyers).
+      - New module `marketplace_checkout.py`:
+        - `POST /api/marketplace/{job_id}/checkout` — accepts
+          `{job_id, buyer_email, origin_url}`; price/currency derived
+          from the listing on the backend (NEVER from the request);
+          creates a Stripe checkout session via
+          `emergentintegrations.payments.stripe.checkout.StripeCheckout`.
+        - `GET /api/marketplace/checkout/status/{session_id}` — polled
+          by the success page; mints a one-shot `download_token` once
+          payment_status==paid (idempotent).
+        - `POST /api/webhook/stripe` — webhook handler (also idempotent).
+      - New collection `payment_transactions` records every checkout
+        with status, payment_status, amount, fee split, buyer_email,
+        download_token, timestamps.
+      - `/api/export/{job_id}/{kind}` now accepts an optional `?token=`
+        query param that grants buyer access without ownership.
+      - `jobs_history.load_job_any_owner()` hydrates any job by id for
+        verified paid downloads.
+      - Frontend:
+        - `PurchaseDialog.jsx` — email input + live 6% fee breakdown,
+          redirects to Stripe Checkout.
+        - `PurchaseSuccessPage.jsx` at `/marketplace/:jobId/success`
+          polls until paid, then renders 3 download buttons (STL / 3MF
+          / swap instructions) using the tokenized URL.
+        - `ListingDetailPage` Buy button now opens PurchaseDialog
+          (was disabled in Phase A).
+      - Stricter pydantic `Literal` types for `geometry` and
+        `render_mode` in `OptimizeIn` so typos 422 instead of silently
+        falling back.
+- [x] **AuthCallbackHandler timeout** — 12-second fallback + always-visible
+      "Skip" button so stale `#session_id` fragments can never permanently
+      mask the upload zone (lib/auth.js).
+- [x] **Tests**: +1 disc geometry test, +marketplace_checkout tests
+      (404 paths) — **29/29 backend tests pass**.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG
