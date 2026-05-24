@@ -85,6 +85,16 @@ export const AuthCallbackHandler = ({ onComplete }) => {
   );
   const hasRun = useRef(false);
 
+  // Hard timeout: if the auth callback hangs for more than 12 seconds
+  // (Emergent's auth server unreachable, stale session_id from a tab
+  // that was reopened, etc.), force-dismiss so the user can still use
+  // the app. The overlay covered the upload zone and never went away.
+  useEffect(() => {
+    if (!processing) return;
+    const t = setTimeout(() => setProcessing(false), 12000);
+    return () => clearTimeout(t);
+  }, [processing]);
+
   useEffect(() => {
     if (!processing) return;
     if (hasRun.current) return;
@@ -100,7 +110,7 @@ export const AuthCallbackHandler = ({ onComplete }) => {
         await api.post(
           "/auth/session",
           { session_id: sessionId },
-          { withCredentials: true }
+          { withCredentials: true, timeout: 10000 }
         );
       } catch {
         /* fall through — user will see anonymous state */
@@ -117,12 +127,24 @@ export const AuthCallbackHandler = ({ onComplete }) => {
   if (!processing) return null;
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950 text-zinc-100"
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-zinc-950 text-zinc-100"
       data-testid="auth-callback-loader"
     >
       <div className="font-mono text-[11px] uppercase tracking-[0.25em] text-zinc-300 animate-pulse">
         Signing you in…
       </div>
+      <button
+        onClick={() => {
+          // Wipe any stale hash so refresh doesn't bring this back.
+          const cleanUrl = window.location.pathname + window.location.search;
+          window.history.replaceState({}, document.title, cleanUrl);
+          setProcessing(false);
+        }}
+        data-testid="auth-callback-skip"
+        className="font-mono text-[10px] uppercase tracking-[0.18em] border border-zinc-700 px-4 py-2 hover:bg-zinc-100 hover:text-zinc-950 transition-colors"
+      >
+        Skip · continue without signing in
+      </button>
     </div>
   );
 };
