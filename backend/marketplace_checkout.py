@@ -32,6 +32,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, EmailStr, Field
 
 from email_service import send_purchase_email
+from payouts import settle_creator_payout
 
 # Match the platform-fee constant in marketplace.py (kept here to avoid
 # circular imports; if either ever changes update both).
@@ -173,6 +174,17 @@ def build_checkout_router(db: AsyncIOMotorDatabase) -> APIRouter:
             update["download_token"] = token
             update["paid_at"] = datetime.now(timezone.utc)
 
+            # Transfer creator's share via Stripe Connect (or record as
+            # owed if they haven't onboarded yet). Never raises — the
+            # buyer experience continues regardless.
+            txn_with_id = {**txn, "session_id": session_id}
+            payout = await settle_creator_payout(db, txn_with_id)
+            update["payout_status"] = payout["payout_status"]
+            if payout["transfer_id"]:
+                update["transfer_id"] = payout["transfer_id"]
+            if payout["reason"]:
+                update["transfer_failed_reason"] = payout["reason"]
+
             # Fire-and-forget the buyer email. Failures don't block the
             # on-page download links from rendering.
             job = await db.jobs.find_one(
@@ -228,17 +240,23 @@ def build_checkout_router(db: AsyncIOMotorDatabase) -> APIRouter:
             )
             if txn and not txn.get("download_token"):
                 token = secrets.token_urlsafe(24)
+                # Settle Connect payout (or record as owed).
+                payout = await settle_creator_payout(db, txn)
+                stripe_update: Dict[str, Any] = {
+                    "status": "complete",
+                    "payment_status": "paid",
+                    "download_token": token,
+                    "paid_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                    "payout_status": payout["payout_status"],
+                }
+                if payout["transfer_id"]:
+                    stripe_update["transfer_id"] = payout["transfer_id"]
+                if payout["reason"]:
+                    stripe_update["transfer_failed_reason"] = payout["reason"]
                 await db.payment_transactions.update_one(
                     {"session_id": event.session_id},
-                    {
-                        "$set": {
-                            "status": "complete",
-                            "payment_status": "paid",
-                            "download_token": token,
-                            "paid_at": datetime.now(timezone.utc),
-                            "updated_at": datetime.now(timezone.utc),
-                        }
-                    },
+                    {"$set": stripe_update},
                 )
                 # Same email logic as the polling path above.
                 job = await db.jobs.find_one(

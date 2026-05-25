@@ -134,6 +134,34 @@ export const LICENSE_PRESETS = [
   { id: "CC-BY-ND", label: "CC-BY-ND — No Derivatives" },
 ];
 
+// --- Creator payouts (Stripe Connect) -------------------------------
+export const startPayoutOnboarding = async () => {
+  const origin = window.location.origin;
+  const { data } = await api.post(
+    "/payouts/onboard",
+    {
+      return_url: `${origin}/?payouts=ok`,
+      refresh_url: `${origin}/?payouts=refresh`,
+    },
+    { withCredentials: true },
+  );
+  return data; // { url, account_id, payouts_enabled }
+};
+
+export const getPayoutStatus = async () => {
+  const { data } = await api.get("/payouts/status", {
+    withCredentials: true,
+  });
+  return data; // { has_account, payouts_enabled, charges_enabled, details_submitted }
+};
+
+export const getPayoutTransactions = async () => {
+  const { data } = await api.get("/payouts/transactions", {
+    withCredentials: true,
+  });
+  return data; // { transactions, total_paid_usd, total_pending_usd }
+};
+
 // --- Marketplace Phase B: guest checkout ----------------------------
 export const createCheckoutSession = async (jobId, buyerEmail) => {
   const { data } = await api.post(`/marketplace/${jobId}/checkout`, {

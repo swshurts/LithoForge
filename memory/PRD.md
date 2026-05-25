@@ -182,6 +182,58 @@
       `/creator/:id`.
 - [x] **Tests**: 5 new marketplace tests + 17 existing = 22/22 passing.
 
+## Implemented (2026-02-25) — Marketplace Phase C: Stripe Connect creator payouts
+
+- [x] **`payouts.py`** — Stripe Connect Express integration via the raw
+      `stripe` Python SDK (not the emergentintegrations wrapper, since
+      Connect endpoints aren't exposed by it).
+      - `create_express_account(email)` — provisions a new connected
+        account with `transfers` + `card_payments` capabilities.
+      - `create_account_link(account_id, refresh_url, return_url)` —
+        builds a one-shot Stripe-hosted onboarding URL.
+      - `fetch_account_status(account_id)` — reads
+        charges_enabled / payouts_enabled / details_submitted.
+      - `transfer_to_creator(amount, destination, transfer_group)` —
+        sends the creator's 94% share as a separate `stripe.Transfer`
+        after the platform receives the buyer's payment.
+- [x] **`settle_creator_payout`** is called from BOTH the polling
+      `/marketplace/checkout/status/{id}` and the `/webhook/stripe`
+      paths the moment `payment_status == paid`. Three outcomes
+      recorded on the transaction:
+      - `transferred` — creator got the money instantly.
+      - `owed` — creator hasn't completed onboarding yet; we track
+        the amount until they finish.
+      - `failed` — Stripe returned an error (Connect not enabled, bank
+        rejected, etc.); reason stored in `transfer_failed_reason`.
+- [x] **Endpoints (auth required):**
+      - `POST /api/payouts/onboard {return_url, refresh_url}` — creates
+        a Connect account if needed, returns onboarding URL.
+      - `GET /api/payouts/status` — pulls live status from Stripe and
+        caches `charges_enabled` + `payouts_enabled` on the user doc.
+      - `GET /api/payouts/transactions` — ledger of every paid sale
+        with payout_status + lifetime totals.
+- [x] **Frontend `/payouts` page** — auth-gated creator dashboard:
+      Stripe Connect status card, "Set up payouts" / "Resume onboarding"
+      / "Manage on Stripe" button, lifetime-paid + owed totals, recent
+      sales ledger with per-row payout-status badges.
+- [x] **UserMenu** dropdown gets a new "Payouts" link.
+- [x] Graceful degradation: when `STRIPE_API_KEY` is the Emergent
+      sandbox token (`sk_test_emergent`), the buyer-side checkout still
+      works perfectly via emergentintegrations; only the Connect
+      endpoints require a real Stripe test key. Sales for un-onboarded
+      creators are marked `owed` so the platform can settle manually.
+
+### Setup required for live Connect testing
+1. Sign in to Stripe → Developers → API keys → copy the **Secret test key**
+   (`sk_test_...`).
+2. In Stripe → Settings → Connect → "Get started" — enable Connect for
+   test mode if not already on.
+3. Swap `STRIPE_API_KEY=sk_test_emergent` in `/app/backend/.env` for the
+   real key and restart backend.
+4. From the studio, sign in → User menu → Payouts → "Set up payouts".
+   Stripe's hosted onboarding accepts test data (SSN 000-00-0000, DOB
+   any past date, address any US address).
+
 ## Implemented (2026-02-25) — Printer catalog + licensing + buyer override + Resend scaffold + painting smoothing
 
 - [x] **Printer profile catalog (`printers.py`)** — 18 profiles organized

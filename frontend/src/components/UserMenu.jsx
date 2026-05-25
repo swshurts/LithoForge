@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { LogIn, LogOut, User as UserIcon, Cloud } from "lucide-react";
+import { Link } from "react-router-dom";
+import { HandCoins, LogIn, LogOut, User as UserIcon, Cloud } from "lucide-react";
 import { useAuth } from "../lib/auth";
 
 export const UserMenu = () => {
@@ -84,6 +85,15 @@ export const UserMenu = () => {
             <Cloud className="w-3 h-3" />
             Presets synced to cloud
           </div>
+          <Link
+            to="/payouts"
+            onClick={() => setOpen(false)}
+            data-testid="payouts-menu-link"
+            className="w-full flex items-center gap-2 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.15em] text-zinc-300 hover:bg-zinc-900 hover:text-emerald-300 transition-colors border-b border-zinc-800"
+          >
+            <HandCoins className="w-3 h-3" strokeWidth={1.5} />
+            Payouts
+          </Link>
           <button
             onClick={() => {
               setOpen(false);
