@@ -5,6 +5,7 @@ import { editsToCssFilter, editsToClipPath, editsAreActive } from "./ImageEditPa
 import { CropOverlay } from "./CropOverlay";
 import { CompareSlider } from "./CompareSlider";
 import { ZoomPanView } from "./ZoomPanView";
+import { Loupe } from "./Loupe";
 
 const ViewTabs = ({ active, setActive, hasResult }) => (
   <div
@@ -47,10 +48,12 @@ export const Viewport = ({
   renderMode,
   edits,
   setEdits,
+  filaments,
 }) => {
   const [view, setView] = useState("preview");
   const [zoomed, setZoomed] = useState(false);
   const imgWrapRef = useRef(null);
+  const imgRef = useRef(null);
 
   useEffect(() => {
     if (result && view === "original") setView("preview");
@@ -134,11 +137,13 @@ export const Viewport = ({
               data-testid="viewport-image-wrap"
             >
               <img
+                ref={imgRef}
                 src={previewSrc}
                 alt="lithophane"
                 className="block max-h-[70vh] max-w-full object-contain"
                 data-testid="viewport-image"
                 draggable={false}
+                crossOrigin="anonymous"
                 style={{
                   filter: filterStyle,
                   clipPath: clipStyle,
@@ -168,6 +173,13 @@ export const Viewport = ({
               )}
             </div>
           </ZoomPanView>
+        )}
+        {result && filaments?.length > 0 && imgRef.current && view !== "compare" && (
+          <Loupe
+            imageEl={imgRef.current}
+            enabled={true}
+            filaments={filaments}
+          />
         )}
       </div>
 

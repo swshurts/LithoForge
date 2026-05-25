@@ -39,10 +39,8 @@ sync_db = MongoClient(MONGO_URL)[DB_NAME]
 
 
 @pytest.fixture(scope="module")
-def client():
-    s = requests.Session()
-    s.headers.update({"Content-Type": "application/json"})
-    return s
+def client(authed_client):
+    return authed_client
 
 
 def _make_photo_b64(size=(64, 48)) -> str:

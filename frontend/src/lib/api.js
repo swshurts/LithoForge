@@ -134,6 +134,12 @@ export const LICENSE_PRESETS = [
   { id: "CC-BY-ND", label: "CC-BY-ND — No Derivatives" },
 ];
 
+// --- User quota -----------------------------------------------------
+export const getMyQuota = async () => {
+  const { data } = await api.get("/me/quota", { withCredentials: true });
+  return data; // { tier, period, period_key, limit, used, remaining, blocked }
+};
+
 // --- Creator payouts (Stripe Connect) -------------------------------
 export const startPayoutOnboarding = async () => {
   const origin = window.location.origin;

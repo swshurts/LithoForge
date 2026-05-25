@@ -1,7 +1,8 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Zap, Cpu, Store } from "lucide-react";
+import { Zap, Store } from "lucide-react";
 import { UserMenu } from "./UserMenu";
+import { QuotaCounter } from "./QuotaCounter";
 
 export const Header = ({ onGenerate, canGenerate, generating }) => {
   return (
@@ -28,17 +29,18 @@ export const Header = ({ onGenerate, canGenerate, generating }) => {
           </div>
         </div>
         <div className="hidden md:flex items-center gap-3 pl-4 border-l border-zinc-800">
-          <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500">
-            <Cpu className="w-3 h-3" strokeWidth={1.5} />
-            Backend solver
-          </div>
-          <div className="text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-600">
-            · ΔE76 nearest-neighbour
-          </div>
+          <QuotaCounter />
         </div>
       </div>
 
       <div className="flex items-center gap-3">
+        <Link
+          to="/pricing"
+          data-testid="header-pricing-link"
+          className="hidden lg:block text-[10px] font-mono uppercase tracking-[0.15em] text-zinc-500 hover:text-zinc-200 transition-colors duration-150"
+        >
+          Pricing
+        </Link>
         <Link
           to="/marketplace"
           data-testid="header-marketplace-link"

@@ -4,6 +4,7 @@ import { PaletteEditor } from "./PaletteEditor";
 import { JobHistory } from "./JobHistory";
 import { HelpHint } from "./HelpHint";
 import { exportUrl } from "../lib/api";
+import { useQuota } from "../lib/quota";
 
 const DeltaBadge = ({ label, value, accent }) => (
   <div className="panel-muted p-3 space-y-1">
@@ -31,8 +32,21 @@ const quality = (de) => {
 };
 
 const downloadFile = async (url, filename) => {
-  const res = await fetch(url, { credentials: "omit" });
-  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) {
+    const status = res.status;
+    let detail = "";
+    try {
+      const body = await res.json();
+      detail = body?.detail?.error || body?.detail?.message || body?.detail || "";
+    } catch {
+      /* ignore */
+    }
+    const err = new Error(detail || `Download failed (${status})`);
+    err.status = status;
+    err.detail = detail;
+    throw err;
+  }
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -46,17 +60,27 @@ const downloadFile = async (url, filename) => {
 
 const DownloadButton = ({ url, filename, icon: Icon, label, sub, testid }) => {
   const [busy, setBusy] = React.useState(false);
+  const { refresh, showUpgrade } = useQuota();
   const onClick = async (e) => {
     e.preventDefault();
     if (!url || busy) return;
     setBusy(true);
     try {
       await downloadFile(url, filename);
+      // Successful download — bump the quota counter in the header.
+      refresh();
     } catch (err) {
-      // surface error via existing toaster from sonner
-      // eslint-disable-next-line no-undef
-      try { (await import("sonner")).toast.error(err.message || "Download failed"); }
-      catch { /* ignore */ }
+      // 401 (sign-in required) and 402 (quota exhausted) both open the
+      // upgrade/sign-in modal. Everything else surfaces as a toast.
+      if (err.status === 401 || err.status === 402) {
+        showUpgrade();
+      } else {
+        try {
+          (await import("sonner")).toast.error(err.message || "Download failed");
+        } catch {
+          /* ignore */
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -225,22 +249,37 @@ export const StatsPanel = ({
         </div>
         {result ? (
           <div className="space-y-1.5" data-testid="allocation-list">
-            {result.timeline.map((t, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-2 font-mono text-[11px]"
-              >
+            {result.timeline.map((t, i) => {
+              const pct = result.total_layers > 0
+                ? (t.layers / result.total_layers) * 100
+                : 0;
+              return (
                 <div
-                  className="w-3 h-3 border border-zinc-700"
-                  style={{ background: t.color }}
-                />
-                <span className="text-zinc-300 flex-1">{t.name}</span>
-                <span className="text-zinc-500 tabular-nums">{t.layers}×</span>
-                <span className="text-zinc-600 tabular-nums w-20 text-right">
-                  {t.start_z_mm.toFixed(2)}–{t.end_z_mm.toFixed(2)}mm
-                </span>
-              </div>
-            ))}
+                  key={i}
+                  className="flex items-center gap-2 font-mono text-[11px]"
+                  data-testid={`allocation-row-${i}`}
+                >
+                  <div
+                    className="w-3 h-3 border border-zinc-700"
+                    style={{ background: t.color }}
+                  />
+                  <span className="text-zinc-300 flex-1 truncate">{t.name}</span>
+                  <span
+                    className="text-emerald-300 tabular-nums w-10 text-right"
+                    data-testid={`allocation-usage-${i}`}
+                    title="Percentage of total layers using this filament"
+                  >
+                    {pct.toFixed(0)}%
+                  </span>
+                  <span className="text-zinc-500 tabular-nums w-8 text-right">
+                    {t.layers}×
+                  </span>
+                  <span className="text-zinc-600 tabular-nums w-20 text-right">
+                    {t.start_z_mm.toFixed(2)}–{t.end_z_mm.toFixed(2)}mm
+                  </span>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="panel-muted p-4 text-center text-xs text-zinc-500">

@@ -313,6 +313,7 @@ export default function App() {
       renderMode={config.render_mode}
       edits={edits}
       setEdits={setEdits}
+      filaments={filaments}
     />
   );
 

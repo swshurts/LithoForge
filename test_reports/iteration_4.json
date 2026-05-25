@@ -1,0 +1,40 @@
+{
+  "summary": "Round 4 — Sign-in-gated downloads, per-user quota, pricing teaser, Usage % column, magnifier loupe. Backend pytest: 43/43 passing (37 existing + 6 new tests in test_quota.py). Backend curl: GET /api/me/quota unauth → {tier:'guest', blocked:true, limit:0, used:0}; GET /api/export/{id}/stl unauth → 401 with detail.error='auth_required'. Frontend: QuotaCounter renders 'GUEST 0/0 downloads left UPGRADE' for anonymous and 'PRO Unlimited downloads' for the seeded pro user. Header Pricing + Marketplace links visible. UpgradeModal opens with sign-in CTA + plan-hobbyist + plan-pro (both COMING SOON, disabled). /pricing route renders all 3 plan cards (free/hobbyist/pro) and the notify-email-input + notify-submit. StatsPanel Layer Allocation: 6 allocation-usage-{i} cells with values summing to 102% (17%×6 — within rounding tolerance). Magnifier Loupe: confirmed working — synthetic shift+pointerdown on data-testid='viewport-image' renders data-testid='loupe' with sampled hex (#F5F5F5), mapped filament name (White), and ΔE value (0.0). Guest STL Download click correctly opens the Upgrade modal (no 401 download attempt).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_quota.py",
+    "/app/backend/tests/test_lithophane_api.py",
+    "/app/backend/tests/test_marketplace.py",
+    "/app/backend/tests/test_marketplace_checkout.py",
+    "/app/backend/tests/test_printers_extras.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Loupe.jsx samplePoint() calls ctx.getImageData() (lines 107-111) WITHOUT a try/catch. If the viewport image ever becomes a remote URL (currently it's a data: URL so this is fine), a tainted-canvas SecurityError will throw on the first move. Recommend wrapping the getImageData loop in try/catch and silently returning — the canvas init at L77 already handles drawImage failures the same way.",
+    "Loupe.jsx pointer-event listener subscribes inside a useEffect that re-runs every time pos changes (dep array includes pos at L171). This re-binds pointerdown/move/up on every sample point. Cheap, but it means a stale closure could fire — consider using refs instead of state inside the listeners.",
+    "PricingPage.jsx uses localStorage to capture email interest. The 'subscription_interest' record is browser-local only — there is no server endpoint to retrieve it. Either build a /api/marketing/interest collector or remove the persistence so users aren't given the false impression their email was registered server-side.",
+    "QuotaCounter shows compact mode using a 'plans' link, but the studio header always passes default (compact=false). Dead code branch — either expose a prop or trim the compact UI.",
+    "Carry-over from iteration 2: server.py @app.on_event('shutdown') is still deprecated; migrate to FastAPI lifespan handler.",
+    "UpgradeModal.jsx — when isAnon=false and quota.used<5, the modal still says 'You\\'ve used all 5 free downloads' because the modal only opens via showUpgrade() which is fired on 402. Consider showing a 'remaining' state when called manually from the Upgrade button so the copy isn't misleading."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (43/43 pytest)",
+    "frontend": "100% — every required testid rendered and behaved correctly"
+  },
+  "test_credentials": "Seeded pro-tier session: USER_ID=ui-test-user-1779735984, TOKEN=ui-test-token-1779735984 (also test-user-pytest via conftest.py for pytest). Anonymous flows tested without a token. Loupe must be triggered via synthetic PointerEvent with shiftKey:true (Playwright's page.mouse.down() after keyboard.down('Shift') does NOT propagate shiftKey onto the PointerEvent — use page.evaluate(\"dispatchEvent(new PointerEvent('pointerdown',{shiftKey:true,...}))\") instead).",
+  "seed_data_creation": "test_quota.py creates a throwaway 'test-quota-free' user + jobs to exercise the 5-download cap. UI test seeded a pro-tier 'ui-test-user-*' for loupe + allocation verification. Both are cleaned up implicitly by being prefixed and isolated.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Pytest entry: `cd /app/backend && python -m pytest tests/ -q` (43 tests). Quota gating verified end-to-end (free 5-cap, pro unlimited, guest 401, buyer-token bypass not retested but unchanged). Frontend testids exercised: quota-counter, quota-upgrade-btn, upgrade-modal, upgrade-modal-close, upgrade-signin-btn, plan-hobbyist[-cta], plan-pro[-cta], pricing-page, pricing-plan-{free,hobbyist,pro}, pricing-{plan}-cta, notify-email-input, notify-submit, allocation-usage-{0..5}, viewport-image, loupe. Loupe requires a JS-dispatched PointerEvent with shiftKey:true for headless testing; native page.mouse won't propagate the modifier. Toast detection for invalid-email submission did not surface in the DOM under [data-sonner-toast] selectors during my run — the toast may be rendered via portal under <ol> from sonner; if you need to assert it, query 'li[data-sonner-toast]' or wait longer (≥1500ms).",
+  "rca of the issue": "No bugs. Initial loupe failure during testing was a Playwright limitation (page.keyboard.down('Shift') + page.mouse.down() does not set shiftKey on the resulting PointerEvent). Loupe works correctly when shift is applied via the element-level click({modifiers:['Shift']}) or via dispatched synthetic events — both verified."
+}

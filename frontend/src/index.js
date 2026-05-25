@@ -8,9 +8,12 @@ import { CreatorPage } from "@/components/marketplace/CreatorPage";
 import { ListingDetailPage } from "@/components/marketplace/ListingDetailPage";
 import { PurchaseSuccessPage } from "@/components/marketplace/PurchaseSuccessPage";
 import { PayoutsPage } from "@/components/marketplace/PayoutsPage";
+import { PricingPage } from "@/components/PricingPage";
 import { installErrorReporter } from "@/lib/errorReporter";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, AuthCallbackHandler } from "@/lib/auth";
+import { QuotaProvider } from "@/lib/quota";
+import { GlobalUpgradeModal } from "@/components/GlobalUpgradeModal";
 
 installErrorReporter();
 
@@ -19,17 +22,21 @@ root.render(
   <React.StrictMode>
     <ErrorBoundary>
       <AuthProvider>
-        <BrowserRouter>
-          <AuthCallbackHandler />
-          <Routes>
-            <Route path="/" element={<App />} />
-            <Route path="/marketplace" element={<MarketplacePage />} />
-            <Route path="/marketplace/:jobId" element={<ListingDetailPage />} />
-            <Route path="/marketplace/:jobId/success" element={<PurchaseSuccessPage />} />
-            <Route path="/creator/:userId" element={<CreatorPage />} />
-            <Route path="/payouts" element={<PayoutsPage />} />
-          </Routes>
-        </BrowserRouter>
+        <QuotaProvider>
+          <BrowserRouter>
+            <AuthCallbackHandler />
+            <GlobalUpgradeModal />
+            <Routes>
+              <Route path="/" element={<App />} />
+              <Route path="/marketplace" element={<MarketplacePage />} />
+              <Route path="/marketplace/:jobId" element={<ListingDetailPage />} />
+              <Route path="/marketplace/:jobId/success" element={<PurchaseSuccessPage />} />
+              <Route path="/creator/:userId" element={<CreatorPage />} />
+              <Route path="/payouts" element={<PayoutsPage />} />
+              <Route path="/pricing" element={<PricingPage />} />
+            </Routes>
+          </BrowserRouter>
+        </QuotaProvider>
       </AuthProvider>
     </ErrorBoundary>
   </React.StrictMode>,

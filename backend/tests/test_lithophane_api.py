@@ -32,11 +32,16 @@ API = f"{BASE_URL}/api"
 
 # --- fixtures ---------------------------------------------------------------
 
+import asyncio
+import secrets
+from datetime import datetime, timezone, timedelta
+
+from motor.motor_asyncio import AsyncIOMotorClient
+
+
 @pytest.fixture(scope="session")
-def client():
-    s = requests.Session()
-    s.headers.update({"Content-Type": "application/json"})
-    return s
+def client(authed_client):
+    return authed_client
 
 
 def _make_photo_b64(size=(128, 96)) -> str:

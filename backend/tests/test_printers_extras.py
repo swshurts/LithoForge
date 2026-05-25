@@ -51,10 +51,8 @@ def _photo_b64(size=(96, 64)) -> str:
 
 
 @pytest.fixture(scope="module")
-def session():
-    s = requests.Session()
-    s.headers.update({"Content-Type": "application/json"})
-    return s
+def session(authed_client):
+    return authed_client
 
 
 @pytest.fixture(scope="module")

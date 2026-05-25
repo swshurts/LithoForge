@@ -41,6 +41,7 @@ from jobs_history import (
 from marketplace import build_marketplace_router
 from marketplace_checkout import build_checkout_router, resolve_download_token
 from payouts import build_payouts_router
+from quota import enforce_quota, get_quota_state, record_download
 
 
 ROOT_DIR = Path(__file__).parent
@@ -448,6 +449,37 @@ async def _ensure_job_for_paid_buyer(job_id: str, token: str) -> bool:
     return True
 
 
+async def _gate_creator_download(
+    job_id: str, kind: str, current_user
+) -> None:
+    """For creator-side downloads (no buyer token): require sign-in,
+    then enforce the per-tier quota and record the usage."""
+    if current_user is None:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "error": "auth_required",
+                "message": "Sign in to download your generated files.",
+            },
+        )
+    await enforce_quota(db, current_user.user_id, job_id)
+    # Hydrate the job from MongoDB if it's not in memory.
+    await _ensure_job_in_memory(job_id, current_user)
+    # Record AFTER hydration so we never bill a user for a missing job.
+    await record_download(db, current_user.user_id, job_id, kind)
+
+
+@api_router.get("/me/quota")
+async def my_quota(current_user=Depends(get_current_user_dep)) -> Dict[str, Any]:
+    """Return the signed-in user's current quota usage. For guests
+    returns a sentinel that the frontend can use to show the gate."""
+    if current_user is None:
+        return {"tier": "guest", "blocked": True, "limit": 0, "used": 0,
+                "remaining": 0, "period": "lifetime", "period_key": "all"}
+    state = await get_quota_state(db, current_user.user_id)
+    return state.to_dict()
+
+
 @api_router.get("/export/{job_id}/stl")
 async def export_stl(
     job_id: str,
@@ -456,9 +488,10 @@ async def export_stl(
     printer: Optional[str] = None,
 ) -> Response:
     if token:
+        # Buyer flow — token grants access, no quota cost.
         await _ensure_job_for_paid_buyer(job_id, token)
     else:
-        await _ensure_job_in_memory(job_id, current_user)
+        await _gate_creator_download(job_id, "stl", current_user)
     export = _build_export(job_id, printer_override=printer)
     return Response(
         content=export["stl"],
@@ -477,7 +510,7 @@ async def export_swaps(
     if token:
         await _ensure_job_for_paid_buyer(job_id, token)
     else:
-        await _ensure_job_in_memory(job_id, current_user)
+        await _gate_creator_download(job_id, "swaps", current_user)
     export = _build_export(job_id, printer_override=printer)
     return Response(
         content=export["swap_txt"],
@@ -496,7 +529,7 @@ async def export_3mf(
     if token:
         await _ensure_job_for_paid_buyer(job_id, token)
     else:
-        await _ensure_job_in_memory(job_id, current_user)
+        await _gate_creator_download(job_id, "3mf", current_user)
     export = _build_export(job_id, printer_override=printer)
     return Response(
         content=export["threemf"],
