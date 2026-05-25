@@ -182,6 +182,43 @@
       `/creator/:id`.
 - [x] **Tests**: 5 new marketplace tests + 17 existing = 22/22 passing.
 
+## Implemented (2026-02-25) — Sign-in gate + per-user quota + pricing teaser + Usage % + magnifier loupe
+
+- [x] **Sign-in REQUIRED to download**. `/api/export/{id}/{kind}` without
+      an auth cookie or buyer token now returns `401 auth_required`.
+      Marketplace token-based buyer downloads bypass the gate (they paid).
+- [x] **Quota system (`quota.py`)** — per-user, per-tier download caps:
+      - `free`: 5 lifetime downloads (hard 402 on the 6th).
+      - `hobbyist`: 25 / calendar month (Stripe to be wired later).
+      - `pro`: unlimited + publish + payouts.
+      - A "use" = first download of a (user, job) pair. STL + 3MF + swap
+        text for the same job count as ONE use so creators aren't
+        penalized for grabbing all three formats.
+      - Re-downloads of already-counted jobs are always permitted even
+        when the user is over quota (so an old job stays accessible).
+- [x] **`GET /api/me/quota`** returns the signed-in user's tier, limit,
+      used, remaining, period_key, and a `blocked` flag. Guests get a
+      sentinel `{tier: "guest", blocked: true}` so the UI shows the gate.
+- [x] **Frontend `QuotaProvider`** (lib/quota.jsx) — global context
+      caching the current quota state, with a `showUpgrade()` helper.
+- [x] **`QuotaCounter`** in the studio header — tier badge + downloads
+      remaining + Upgrade button. Anonymous = GUEST badge + "0 / 0".
+- [x] **`UpgradeModal`** — opens on 401 / 402 / Upgrade-click. Shows
+      sign-in CTA for anonymous users + Hobbyist / Pro plan cards
+      (currently "Coming soon" pending Stripe).
+- [x] **`/pricing` page** with all 3 plans + email-capture for launch alerts.
+- [x] **Per-filament Usage %** column in Layer Allocation (StatsPanel)
+      — each row shows `pct.toFixed(0)%` plus the existing layer count.
+- [x] **Magnifier loupe** (`Loupe.jsx`) — long-press (mobile) or
+      shift-click (desktop) on the rendered preview shows a 4× zoom
+      circle anchored to the cursor with: source colour swatch, closest
+      filament name + swatch, and live ΔE76 between them.
+- [x] **Test fixtures consolidated** into `tests/conftest.py` — all 3
+      test files now share the `authed_client` (pro-tier) fixture.
+- [x] **43/43 backend tests pass**, including 6 new quota tests
+      verifying first-5-OK, 6th-blocks, re-download-allowed, guest-401,
+      pro-unlimited.
+
 ## Implemented (2026-02-25) — Marketplace Phase C: Stripe Connect creator payouts
 
 - [x] **`payouts.py`** — Stripe Connect Express integration via the raw
