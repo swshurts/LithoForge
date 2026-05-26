@@ -7,8 +7,10 @@ import {
   Sparkles,
   X,
   Plus,
+  Beaker,
 } from "lucide-react";
 import { getFilamentLibrary } from "../lib/api";
+import { FilamentLibraryDialog } from "./FilamentLibraryDialog";
 
 const Swatch = ({
   filament,
@@ -20,6 +22,7 @@ const Swatch = ({
   canDelete,
   disabled,
   library,
+  onOpenManufacturerLibrary,
 }) => {
   const [editing, setEditing] = useState(false);
   const [hex, setHex] = useState(filament.hex);
@@ -105,6 +108,21 @@ const Swatch = ({
 
       {editing && (
         <div className="absolute z-20 top-full left-0 right-0 mt-1 panel p-2 space-y-2 min-w-[220px]">
+          {onOpenManufacturerLibrary && (
+            <button
+              onClick={() => {
+                onOpenManufacturerLibrary(filament.hex, (libFil) => {
+                  onChange(idx, libFil);
+                  setEditing(false);
+                });
+              }}
+              data-testid={`open-manufacturer-library-${filament.name.toLowerCase()}`}
+              className="w-full flex items-center gap-1.5 justify-center bg-zinc-900 border border-zinc-800 hover:border-zinc-500 hover:text-zinc-100 text-zinc-300 text-[10px] font-bold uppercase tracking-[0.15em] py-1.5 transition-colors"
+            >
+              <Beaker className="w-3 h-3" />
+              Match from manufacturer
+            </button>
+          )}
           {library && library.length > 0 && (
             <div>
               <div className="font-mono text-[9px] uppercase tracking-[0.12em] text-zinc-500 mb-1.5">
@@ -183,7 +201,7 @@ const Swatch = ({
   );
 };
 
-const AddTile = ({ library, onAdd, disabled }) => {
+const AddTile = ({ library, onAdd, disabled, onOpenManufacturerLibrary }) => {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative" data-testid="palette-add-tile">
@@ -199,9 +217,22 @@ const AddTile = ({ library, onAdd, disabled }) => {
         </span>
       </button>
       {open && (
-        <div className="absolute z-30 top-full left-0 right-0 mt-1 panel p-2 min-w-[220px]">
+        <div className="absolute z-30 top-full left-0 right-0 mt-1 panel p-2 min-w-[220px] space-y-2">
+          {onOpenManufacturerLibrary && (
+            <button
+              onClick={() => {
+                setOpen(false);
+                onOpenManufacturerLibrary("#ff7a00", (libFil) => onAdd(libFil));
+              }}
+              data-testid="palette-add-from-manufacturer"
+              className="w-full flex items-center gap-1.5 justify-center bg-zinc-900 border border-zinc-800 hover:border-zinc-500 hover:text-zinc-100 text-zinc-300 text-[10px] font-bold uppercase tracking-[0.15em] py-1.5 transition-colors"
+            >
+              <Beaker className="w-3 h-3" />
+              Match from manufacturer
+            </button>
+          )}
           <div className="font-mono text-[9px] uppercase tracking-[0.12em] text-zinc-500 mb-1.5">
-            Pick a filament
+            Or pick a default
           </div>
           <div className="grid grid-cols-6 gap-1" data-testid="add-library-grid">
             {library.map((f) => (
@@ -239,11 +270,16 @@ export const PaletteEditor = ({
   onPaletteSizeChange,
 }) => {
   const [library, setLibrary] = useState([]);
+  const [libDialog, setLibDialog] = useState(null); // {initialHex, pick: fn}
   useEffect(() => {
     getFilamentLibrary()
       .then(setLibrary)
       .catch(() => {});
   }, []);
+
+  const openManufacturerLibrary = (initialHex, pick) => {
+    setLibDialog({ initialHex, pick });
+  };
 
   const onChange = (idx, f) =>
     setFilaments((list) => list.map((x, i) => (i === idx ? f : x)));
@@ -311,11 +347,16 @@ export const PaletteEditor = ({
               canDelete={canDeleteAny}
               disabled={i >= maxActive}
               library={library}
+              onOpenManufacturerLibrary={openManufacturerLibrary}
             />
           </div>
         ))}
         {canAdd && library.length > 0 && (
-          <AddTile library={library} onAdd={onAdd} />
+          <AddTile
+            library={library}
+            onAdd={onAdd}
+            onOpenManufacturerLibrary={openManufacturerLibrary}
+          />
         )}
       </div>
 
@@ -345,6 +386,13 @@ export const PaletteEditor = ({
           data-testid="auto-order-checkbox"
         />
       </label>
+
+      <FilamentLibraryDialog
+        open={!!libDialog}
+        initialHex={libDialog?.initialHex || "#ff7a00"}
+        onClose={() => setLibDialog(null)}
+        onPick={(libFil) => libDialog?.pick?.(libFil)}
+      />
     </div>
   );
 };

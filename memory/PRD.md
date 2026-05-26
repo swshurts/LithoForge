@@ -420,6 +420,56 @@
       steppers added next to the slider, and the value label now reads
       `5 / 7` instead of just `5` so the available headroom is obvious.
 
+## Implemented (2026-02-26) — Manufacturer filament library + ΔE closest-match + private library
+
+- [x] **Catalog** (`manufacturer_library.py`) — ~120 curated PLA SKUs
+      across 9 brands: Bambu Lab, Polymaker, Prusament, eSun, Sunlu,
+      Overture, Hatchbox, uJoybio3d, FlashForge. Each entry stores
+      `brand · name · hex · td · finish` (gloss / matte / silk /
+      transparent). TDs follow Hueforge conventions tuned per colour
+      family. Slugs (`bambu-lab-pla-basic-orange`) are stable for
+      cross-referencing.
+- [x] **Endpoints** (`filament_library_api.py`,
+      `/api/filament-library/*`):
+        - `GET   /`                      — paged browse + brand/text filter.
+        - `GET   /brands`                — distinct brand list (chip filter).
+        - `GET   /search?hex&algo`       — closest matches in Lab space
+          with **ΔE76** or **ΔE2000** (Sharma 2005). Optional
+          `include_private=true` mixes the caller's saved SKUs into the
+          ranking.
+        - `GET   /mine`                  — list signed-in user's
+          private filaments.
+        - `POST  /mine`                  — add a private SKU
+          (per-user cap of 200).
+        - `DELETE /mine/{id}`            — remove a private SKU.
+        - `POST  /suggest`               — anonymous-OK brand
+          suggestion → `library_suggestions` collection, status
+          `pending` for moderation.
+- [x] **`FilamentLibraryDialog.jsx`** — three-tab modal opened from
+      every palette swatch's edit popover ("Match from manufacturer")
+      and from the AddTile menu when there's room in the palette:
+        - **Find by colour** — colour-picker + hex input + algorithm
+          toggle (ΔE76 / ΔE2000) + brand chip filter. Live debounced
+          search. Each result row shows the swatch, brand · name,
+          finish badge (when not gloss), hex + TD, and a ΔE figure
+          colour-coded green (≤5) / yellow (≤12) / orange (>12).
+          Clicking a row drops the SKU into the palette in one go.
+        - **My library** (auth required) — add/list/remove personal
+          SKUs that automatically mix into the search ranking with a
+          `MINE` badge.
+        - **Suggest** — submit a missing brand/SKU for review.
+- [x] **`PaletteEditor.jsx`** — each swatch's pencil popover and the
+      AddTile dropdown now lead with a "Match from manufacturer"
+      button next to the existing default-library quick-picker. Clicking
+      it opens the new dialog pre-seeded with that swatch's current
+      hex (or `#ff7a00` for fresh swatches).
+- [x] **Tests** (`test_filament_library.py`) — +9 tests cover catalog
+      count, brand filter, hex search ranking & sort order, ΔE2000
+      mode, invalid-hex 400, auth required for private endpoints,
+      add/list/delete round-trip for private SKUs, private SKUs
+      appearing in search when `include_private=true`, suggestion
+      submission. **52/52 backend tests passing.**
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

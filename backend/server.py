@@ -41,6 +41,7 @@ from jobs_history import (
 from marketplace import build_marketplace_router
 from marketplace_checkout import build_checkout_router, resolve_download_token
 from payouts import build_payouts_router
+from filament_library_api import build_filament_library_router
 from quota import enforce_quota, get_quota_state, record_download
 
 
@@ -567,12 +568,14 @@ jobs_router = build_jobs_router(db, require_user_dep, JOBS)
 marketplace_router = build_marketplace_router(db, require_user_dep, get_current_user_dep)
 checkout_router = build_checkout_router(db)
 payouts_router = build_payouts_router(db, require_user_dep)
+filament_lib_router = build_filament_library_router(db, require_user_dep, get_current_user_dep)
 app.include_router(auth_router, prefix="/api")
 app.include_router(presets_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")
 app.include_router(marketplace_router, prefix="/api")
 app.include_router(checkout_router, prefix="/api")
 app.include_router(payouts_router, prefix="/api")
+app.include_router(filament_lib_router)
 
 app.add_middleware(
     CORSMiddleware,

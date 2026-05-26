@@ -49,6 +49,44 @@ export const getFilamentLibrary = async () => {
   return data.filaments;
 };
 
+// Manufacturer / private filament library (catalog of brand SKUs +
+// closest-hex matcher + per-user private list + brand suggestions).
+export const getManufacturerBrands = async () => {
+  const { data } = await api.get("/filament-library/brands");
+  return data.brands;
+};
+
+export const searchManufacturerByHex = async (
+  hex,
+  { algo = "de76", limit = 10, brand, includePrivate = false } = {},
+) => {
+  const params = { hex, algo, limit };
+  if (brand) params.brand = brand;
+  if (includePrivate) params.include_private = true;
+  const { data } = await api.get("/filament-library/search", { params });
+  return data;
+};
+
+export const listPrivateFilaments = async () => {
+  const { data } = await api.get("/filament-library/mine");
+  return data.filaments;
+};
+
+export const addPrivateFilament = async (payload) => {
+  const { data } = await api.post("/filament-library/mine", payload);
+  return data;
+};
+
+export const deletePrivateFilament = async (id) => {
+  const { data } = await api.delete(`/filament-library/mine/${id}`);
+  return data;
+};
+
+export const suggestFilament = async (payload) => {
+  const { data } = await api.post("/filament-library/suggest", payload);
+  return data;
+};
+
 export const exportUrl = (jobId, kind) => `${API}/export/${jobId}/${kind}`;
 
 // --- Cloud presets (authenticated) ----------------------------------
