@@ -382,6 +382,26 @@
 - [x] **Tests**: +1 disc geometry test, +marketplace_checkout tests
       (404 paths) — **29/29 backend tests pass**.
 
+## Implemented (2026-02-26) — iPad / iOS "Script error." overlay suppression
+
+- [x] **Root cause** — On iOS WebKit (Safari / iPad Firefox), any throw
+      inside a cross-origin script (PostHog session-replay, Emergent
+      analytics) is sanitized by the browser to a useless
+      `message="Script error.", error=null, source="", lineno=0` event.
+      CRA's webpack-dev-server client overlay catches `window.onerror`
+      and renders a giant red `Uncaught runtime errors: Script error.`
+      banner blocking the viewport, which fired every time the user
+      touched the brightness / contrast / saturation sliders (the
+      cross-origin script was reacting to the pointer events).
+- [x] **Fix** (`public/index.html`) — extended the existing inline
+      capture-phase error swallow so it also stops propagation for:
+        - `message === "Script error."` with no `e.error` object, AND
+        - `ResizeObserver loop limit exceeded` benign warnings.
+      Both `error` and `unhandledrejection` listeners patched. Genuine
+      errors with a stack still reach the overlay. This is the same
+      defensive pattern already in place for `PerformanceServerTiming`
+      DataCloneErrors.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

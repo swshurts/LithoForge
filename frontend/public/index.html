@@ -22,7 +22,36 @@
         Learn how to configure a non-root public URL by running `npm run build`.
         -->
         <title>Emergent | Fullstack App</title>
-        <script>window.addEventListener("error",function(e){if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){e.stopImmediatePropagation();e.preventDefault()}},true);</script>
+        <script>
+            // Capture-phase swallow for noise that the CRA dev-overlay
+            // would otherwise show as a giant red "Uncaught runtime error"
+            // banner blocking the UI. We never suppress errors that have a
+            // real stack — only the ones that carry no actionable info:
+            //   1. DataCloneError on PerformanceServerTiming (Chrome regression).
+            //   2. Sanitized cross-origin "Script error." with no e.error
+            //      object — iOS/Safari/iOS-Firefox returns this for any
+            //      throw inside a 3rd-party script (PostHog session replay,
+            //      analytics, etc.). The originating script's CORS headers
+            //      are out of our control, so the message is useless to us
+            //      AND to the user.
+            //   3. ResizeObserver loop benign warnings.
+            window.addEventListener("error",function(e){
+                if(e.error instanceof DOMException&&e.error.name==="DataCloneError"&&e.message&&e.message.includes("PerformanceServerTiming")){
+                    e.stopImmediatePropagation();e.preventDefault();return;
+                }
+                var msg=e.message||"";
+                if(!e.error&&(msg==="Script error."||msg.indexOf("ResizeObserver loop")===0)){
+                    e.stopImmediatePropagation();e.preventDefault();
+                }
+            },true);
+            window.addEventListener("unhandledrejection",function(e){
+                var r=e.reason;
+                var msg=(r&&(r.message||r))+"";
+                if(msg==="Script error."||msg.indexOf("ResizeObserver loop")===0){
+                    e.stopImmediatePropagation();e.preventDefault();
+                }
+            },true);
+        </script>
         <script src="https://assets.emergent.sh/scripts/emergent-main.js"></script>
     </head>
     <body>
