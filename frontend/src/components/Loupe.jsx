@@ -68,11 +68,28 @@ export const Loupe = ({ imageEl, enabled, filaments }) => {
   );
 
   // Lazily prepare an offscreen canvas matching the natural image size.
+  // We re-run whenever the <img>'s `complete` flag flips true OR its
+  // `src` changes. Using `setLoadTick` to force a re-render on the
+  // `load` event is the simplest way to keep this watertight without
+  // chaining a half-dozen useEffects.
+  const [loadTick, setLoadTick] = useState(0);
   useEffect(() => {
     if (!imageEl) return;
+    const bump = () => setLoadTick((n) => n + 1);
+    imageEl.addEventListener("load", bump);
+    // If the image is ALREADY complete when the Loupe mounts (common
+    // when src is a data: URL that decoded synchronously), bump once
+    // so the canvas-prep effect runs.
+    if (imageEl.complete && imageEl.naturalWidth > 0) bump();
+    return () => imageEl.removeEventListener("load", bump);
+  }, [imageEl]);
+
+  useEffect(() => {
+    if (!imageEl) return;
+    if (!imageEl.complete || !imageEl.naturalWidth) return;
     const cv = document.createElement("canvas");
-    cv.width = imageEl.naturalWidth || imageEl.width;
-    cv.height = imageEl.naturalHeight || imageEl.height;
+    cv.width = imageEl.naturalWidth;
+    cv.height = imageEl.naturalHeight;
     const ctx = cv.getContext("2d", { willReadFrequently: true });
     try {
       ctx.drawImage(imageEl, 0, 0);
@@ -81,9 +98,9 @@ export const Loupe = ({ imageEl, enabled, filaments }) => {
       // Tainted canvas — silently disable loupe.
       sampleCanvasRef.current = null;
     }
-  }, [imageEl]);
+  }, [imageEl, loadTick]);
 
-  const samplePoint = (clientX, clientY) => {
+  const samplePoint = (clientX, clientY, opts = {}) => {
     if (!imageEl || !sampleCanvasRef.current || !filamentLab.length) return;
     const rect = imageEl.getBoundingClientRect();
     if (
@@ -131,6 +148,7 @@ export const Loupe = ({ imageEl, enabled, filaments }) => {
       color: rgbToHex(...sample),
       mapped: best,
       deltaE: bestDe,
+      _sticky: !!opts.sticky,
     });
   };
 
@@ -138,35 +156,49 @@ export const Loupe = ({ imageEl, enabled, filaments }) => {
     if (!enabled || !imageEl) return;
 
     const onPointerDown = (e) => {
-      // Desktop: shift-click toggles; Mobile: long-press > 350ms
+      // Desktop: shift+click TOGGLES a sticky loupe (a second shift+click
+      // or pressing Escape dismisses it).
+      // Mobile: long-press > 350ms shows the loupe while pressed.
       if (e.shiftKey) {
-        samplePoint(e.clientX, e.clientY);
+        // If already sticky, dismiss; otherwise sample + lock.
+        if (pos?._sticky) {
+          setPos(null);
+        } else {
+          samplePoint(e.clientX, e.clientY, { sticky: true });
+        }
         return;
       }
       longPressTimer.current = setTimeout(() => {
-        samplePoint(e.clientX, e.clientY);
+        samplePoint(e.clientX, e.clientY, { sticky: false });
       }, 350);
     };
     const onPointerMove = (e) => {
-      if (pos) samplePoint(e.clientX, e.clientY);
+      // Only follow the cursor for non-sticky (long-press) sessions.
+      if (pos && !pos._sticky) samplePoint(e.clientX, e.clientY, { sticky: false });
     };
     const onPointerUp = () => {
       if (longPressTimer.current) {
         clearTimeout(longPressTimer.current);
         longPressTimer.current = null;
       }
-      setPos(null);
+      // Don't clear sticky loupes on pointerup — they need a deliberate dismiss.
+      if (pos && !pos._sticky) setPos(null);
+    };
+    const onKeyDown = (e) => {
+      if (e.key === "Escape" && pos?._sticky) setPos(null);
     };
 
     imageEl.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
+    window.addEventListener("keydown", onKeyDown);
     return () => {
       imageEl.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
+      window.removeEventListener("keydown", onKeyDown);
     };
   }, [enabled, imageEl, pos, filamentLab]);
 

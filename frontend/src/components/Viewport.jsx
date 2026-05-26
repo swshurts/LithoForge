@@ -53,7 +53,9 @@ export const Viewport = ({
   const [view, setView] = useState("preview");
   const [zoomed, setZoomed] = useState(false);
   const imgWrapRef = useRef(null);
-  const imgRef = useRef(null);
+  // State (not ref) so the Loupe component re-renders when the <img>
+  // mounts. Using a ref would never trigger Loupe to subscribe.
+  const [imgEl, setImgEl] = useState(null);
 
   useEffect(() => {
     if (result && view === "original") setView("preview");
@@ -137,7 +139,7 @@ export const Viewport = ({
               data-testid="viewport-image-wrap"
             >
               <img
-                ref={imgRef}
+                ref={setImgEl}
                 src={previewSrc}
                 alt="lithophane"
                 className="block max-h-[70vh] max-w-full object-contain"
@@ -174,9 +176,9 @@ export const Viewport = ({
             </div>
           </ZoomPanView>
         )}
-        {result && filaments?.length > 0 && imgRef.current && view !== "compare" && (
+        {result && filaments?.length > 0 && imgEl && view !== "compare" && (
           <Loupe
-            imageEl={imgRef.current}
+            imageEl={imgEl}
             enabled={true}
             filaments={filaments}
           />

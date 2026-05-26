@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import "@/App.css";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 import { Header } from "@/components/Header";
 import { Viewport } from "@/components/Viewport";
 import { ConfigPanel } from "@/components/ConfigPanel";
@@ -373,13 +373,6 @@ export default function App() {
         totalLayers={result?.total_layers || 0}
       />
 
-      <Toaster
-        theme="dark"
-        position="bottom-right"
-        toastOptions={{
-          className: "!rounded-none !border !border-zinc-700 !bg-zinc-950 !font-mono !text-xs",
-        }}
-      />
     </div>
   );
 }

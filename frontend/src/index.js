@@ -14,6 +14,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, AuthCallbackHandler } from "@/lib/auth";
 import { QuotaProvider } from "@/lib/quota";
 import { GlobalUpgradeModal } from "@/components/GlobalUpgradeModal";
+import { Toaster } from "sonner";
 
 installErrorReporter();
 
@@ -26,6 +27,13 @@ root.render(
           <BrowserRouter>
             <AuthCallbackHandler />
             <GlobalUpgradeModal />
+            <Toaster
+              theme="dark"
+              position="bottom-right"
+              toastOptions={{
+                className: "!rounded-none !border !border-zinc-700 !bg-zinc-950 !font-mono !text-xs",
+              }}
+            />
             <Routes>
               <Route path="/" element={<App />} />
               <Route path="/marketplace" element={<MarketplacePage />} />
