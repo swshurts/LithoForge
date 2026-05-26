@@ -402,6 +402,24 @@
       defensive pattern already in place for `PerformanceServerTiming`
       DataCloneErrors.
 
+## Implemented (2026-02-26) — Touch-friendly slider steppers + Max-swaps auto-grow
+
+- [x] **`SteppedSlider` component** (`ImageEditPanel.jsx`) — every
+      brightness / contrast / saturation slider is now flanked by `−`
+      and `+` buttons (`data-testid={slider}-dec` / `-inc`). Holding
+      Shift multiplies the step by 10× for coarse moves. 6×6 px hit
+      targets feel comfortable on touch. Fixes "can't control it
+      precisely" on iPad where 1-unit drags on a 0..200 continuous
+      slider were impossible.
+- [x] **Max colour swaps no longer capped by current palette size**
+      (`ConfigPanel.jsx`). The slider's hard cap is always 7. When the
+      user steps past `paletteLength - 1`, `growPaletteTo()` pulls the
+      missing entries from `/api/filaments/default` (skipping any
+      colour already present by name) so the palette auto-expands
+      from e.g. CMYKW (6) → CMYKW + Blue + Key (8). Same `−` / `+`
+      steppers added next to the slider, and the value label now reads
+      `5 / 7` instead of just `5` so the available headroom is obvious.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

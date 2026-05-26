@@ -47,7 +47,41 @@ export const ConfigPanel = ({
   const update = (key, v) => setConfig((c) => ({ ...c, [key]: v }));
   const isPainting = config.render_mode === "painting";
   const isDisc = config.geometry === "disc";
-  const swapsMax = Math.max(1, Math.min(7, paletteLength - 1));
+  // Hard cap is 7 swaps (= 8 filaments). The palette can grow to match
+  // via `growPaletteTo` below, so the slider isn't artificially limited
+  // by the user's current palette size.
+  const swapsMax = 7;
+
+  // Pull more filaments from the backend default list to fill the palette
+  // up to `target` items (skips any name already present so the user's
+  // edits aren't clobbered).
+  const growPaletteTo = async (target) => {
+    if (!setFilaments) return;
+    if (filaments.length >= target) return;
+    try {
+      const { getDefaultFilaments } = await import("@/lib/api");
+      const defaults = await getDefaultFilaments();
+      setFilaments((curr) => {
+        if (curr.length >= target) return curr;
+        const namesSeen = new Set(curr.map((f) => f.name.toLowerCase()));
+        const extras = defaults.filter(
+          (f) => !namesSeen.has(f.name.toLowerCase()),
+        );
+        const next = [...curr];
+        while (next.length < target && extras.length > 0) {
+          next.push(extras.shift());
+        }
+        return next;
+      });
+    } catch {
+      /* no-op — if defaults can't load, slider clamps naturally */
+    }
+  };
+
+  const handleSwapsChange = (v) => {
+    update("max_swaps", v);
+    if (v + 1 > filaments.length) growPaletteTo(v + 1);
+  };
 
   return (
     <div
@@ -357,19 +391,42 @@ export const ConfigPanel = ({
 
           <Row
             label="Max colour swaps"
-            value={config.max_swaps}
+            value={`${config.max_swaps} / ${swapsMax}`}
             unit=""
             testid="row-swaps"
           >
-            <Slider
-              data-testid="swaps-slider"
-              value={[config.max_swaps]}
-              onValueChange={([v]) => update("max_swaps", v)}
-              min={1}
-              max={swapsMax}
-              step={1}
-              disabled={disabled}
-            />
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                aria-label="Decrease swaps"
+                data-testid="swaps-slider-dec"
+                onClick={() => handleSwapsChange(Math.max(1, config.max_swaps - 1))}
+                disabled={disabled || config.max_swaps <= 1}
+                className="w-6 h-6 flex-shrink-0 flex items-center justify-center border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-600 active:bg-zinc-800 disabled:opacity-30 transition-colors duration-150 touch-manipulation font-mono text-sm leading-none"
+              >
+                −
+              </button>
+              <Slider
+                data-testid="swaps-slider"
+                value={[config.max_swaps]}
+                onValueChange={([v]) => handleSwapsChange(v)}
+                min={1}
+                max={swapsMax}
+                step={1}
+                disabled={disabled}
+                className="flex-1"
+              />
+              <button
+                type="button"
+                aria-label="Increase swaps"
+                data-testid="swaps-slider-inc"
+                onClick={() => handleSwapsChange(Math.min(swapsMax, config.max_swaps + 1))}
+                disabled={disabled || config.max_swaps >= swapsMax}
+                className="w-6 h-6 flex-shrink-0 flex items-center justify-center border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-600 active:bg-zinc-800 disabled:opacity-30 transition-colors duration-150 touch-manipulation font-mono text-sm leading-none"
+              >
+                +
+              </button>
+            </div>
             <div className="font-mono text-[10px] text-zinc-600 mt-1">
               uses {config.max_swaps + 1} filaments · {config.max_swaps} swap
               {config.max_swaps === 1 ? "" : "s"}

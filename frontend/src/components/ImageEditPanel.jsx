@@ -1,7 +1,7 @@
 import React from "react";
 import { Slider } from "./ui/slider";
 import { Label } from "./ui/label";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, Minus, Plus } from "lucide-react";
 import { Histogram } from "./Histogram";
 
 export const DEFAULT_EDITS = {
@@ -49,6 +49,62 @@ const Row = ({ label, value, unit, children, testid }) => (
   </div>
 );
 
+/**
+ * Slider + matching - / + stepper buttons. Touch devices (especially iPad)
+ * can't reliably drag a 1-unit change on a continuous 0..200 slider, so
+ * we surface explicit steppers next to the slider that nudge by `step`
+ * (with Shift held: 10× step) — works with mouse and touch alike.
+ */
+const SteppedSlider = ({
+  testid,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  disabled,
+}) => {
+  const clamp = (v) => Math.max(min, Math.min(max, v));
+  const nudge = (dir, shift) => {
+    const delta = dir * step * (shift ? 10 : 1);
+    onChange(clamp(value + delta));
+  };
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        aria-label="Decrease"
+        data-testid={`${testid}-dec`}
+        onClick={(e) => nudge(-1, e.shiftKey)}
+        disabled={disabled || value <= min}
+        className="w-6 h-6 flex-shrink-0 flex items-center justify-center border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-600 active:bg-zinc-800 disabled:opacity-30 disabled:hover:text-zinc-400 disabled:hover:border-zinc-800 transition-colors duration-150 touch-manipulation"
+      >
+        <Minus className="w-3 h-3" strokeWidth={2} />
+      </button>
+      <Slider
+        data-testid={testid}
+        value={[value]}
+        onValueChange={([v]) => onChange(v)}
+        min={min}
+        max={max}
+        step={step}
+        disabled={disabled}
+        className="flex-1"
+      />
+      <button
+        type="button"
+        aria-label="Increase"
+        data-testid={`${testid}-inc`}
+        onClick={(e) => nudge(1, e.shiftKey)}
+        disabled={disabled || value >= max}
+        className="w-6 h-6 flex-shrink-0 flex items-center justify-center border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-600 active:bg-zinc-800 disabled:opacity-30 disabled:hover:text-zinc-400 disabled:hover:border-zinc-800 transition-colors duration-150 touch-manipulation"
+      >
+        <Plus className="w-3 h-3" strokeWidth={2} />
+      </button>
+    </div>
+  );
+};
+
 export const ImageEditPanel = ({ edits, setEdits, disabled, image }) => {
   const update = (key, v) => setEdits((e) => ({ ...e, [key]: v }));
   const reset = () => setEdits({ ...DEFAULT_EDITS });
@@ -84,10 +140,10 @@ export const ImageEditPanel = ({ edits, setEdits, disabled, image }) => {
           unit=""
           testid="row-brightness"
         >
-          <Slider
-            data-testid="brightness-slider"
-            value={[edits.brightness]}
-            onValueChange={([v]) => update("brightness", v)}
+          <SteppedSlider
+            testid="brightness-slider"
+            value={edits.brightness}
+            onChange={(v) => update("brightness", v)}
             min={20}
             max={200}
             step={1}
@@ -101,10 +157,10 @@ export const ImageEditPanel = ({ edits, setEdits, disabled, image }) => {
           unit=""
           testid="row-contrast"
         >
-          <Slider
-            data-testid="contrast-slider"
-            value={[edits.contrast]}
-            onValueChange={([v]) => update("contrast", v)}
+          <SteppedSlider
+            testid="contrast-slider"
+            value={edits.contrast}
+            onChange={(v) => update("contrast", v)}
             min={20}
             max={200}
             step={1}
@@ -124,17 +180,17 @@ export const ImageEditPanel = ({ edits, setEdits, disabled, image }) => {
           unit=""
           testid="row-saturation"
         >
-          <Slider
-            data-testid="saturation-slider"
-            value={[edits.saturation]}
-            onValueChange={([v]) => update("saturation", v)}
+          <SteppedSlider
+            testid="saturation-slider"
+            value={edits.saturation}
+            onChange={(v) => update("saturation", v)}
             min={0}
             max={200}
             step={1}
             disabled={disabled}
           />
           <div className="font-mono text-[9px] text-zinc-600 mt-0.5">
-            0 = black & white · 100 = original · 200 = vivid
+            0 = black & white · 100 = original · 200 = vivid · hold Shift on ± for 10× step
           </div>
         </Row>
 
