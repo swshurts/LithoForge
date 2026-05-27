@@ -141,6 +141,17 @@ class SuggestionIn(BaseModel):
     notes: Optional[str] = Field(None, max_length=2000)
 
 
+class PaletteMatchEntry(BaseModel):
+    hex: str = Field(..., min_length=4, max_length=9)
+    name: Optional[str] = Field(None, max_length=120)
+
+
+class PaletteMatchIn(BaseModel):
+    filaments: List[PaletteMatchEntry] = Field(..., min_length=1, max_length=12)
+    scope: Literal["mine", "manufacturer", "both"] = "mine"
+    algo: Literal["de76", "de2000"] = "de2000"
+
+
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
@@ -304,5 +315,116 @@ def build_filament_library_router(db, require_user_dep, get_current_user_dep):
             "created_at": datetime.now(timezone.utc),
         })
         return {"ok": True}
+
+    # ----- palette compatibility (auth optional) --------------------------
+    @router.post("/match-palette")
+    async def match_palette(
+        body: PaletteMatchIn,
+        user=Depends(get_current_user_dep),
+    ) -> Dict[str, Any]:
+        """Score every filament in `body.filaments` against the chosen
+        library scope and return the closest match + ΔE for each one.
+
+        `scope="mine"`         — match against the caller's private SKUs
+                                 only (requires auth).
+        `scope="manufacturer"` — match against the global catalog.
+        `scope="both"`         — combine both pools.
+
+        Always returns one result per input, in order. Each result has
+        the input hex, the best match (or `null` if the pool was empty),
+        the ΔE, and a `severity` bucket so the UI can colour-code:
+          severity = "ok"      → ΔE ≤ 5
+          severity = "close"   → ΔE ≤ 12
+          severity = "far"     → ΔE > 12  (creator/buyer should consider
+                                            swapping or buying the SKU)
+        """
+        de = _de76 if body.algo == "de76" else _de2000
+
+        # Resolve the matching pool.
+        pool: List[Dict[str, Any]] = []
+        if body.scope in ("manufacturer", "both"):
+            for fil, lab in _CATALOG_LAB:
+                pool.append({
+                    "id": fil.id, "brand": fil.brand, "name": fil.name,
+                    "hex": fil.hex.upper(), "td": fil.td,
+                    "finish": fil.finish, "source": "manufacturer",
+                    "_lab": lab,
+                })
+        if body.scope in ("mine", "both"):
+            if not user:
+                if body.scope == "mine":
+                    raise HTTPException(status_code=401, detail="auth_required")
+            else:
+                cursor = db.user_filaments.find(
+                    {"user_id": user.user_id}, {"_id": 0}
+                )
+                async for doc in cursor:
+                    try:
+                        lab = _rgb_to_lab(_hex_to_rgb(doc["hex"]))
+                    except Exception:
+                        continue
+                    pool.append({
+                        "id": doc.get("id"), "brand": doc.get("brand", "Private"),
+                        "name": doc["name"], "hex": doc["hex"].upper(),
+                        "td": doc["td"], "finish": doc.get("finish", "gloss"),
+                        "source": "private", "_lab": lab,
+                    })
+
+        def severity(d: float) -> str:
+            if d <= 5:
+                return "ok"
+            if d <= 12:
+                return "close"
+            return "far"
+
+        matches: List[Dict[str, Any]] = []
+        for entry in body.filaments:
+            try:
+                target_lab = _rgb_to_lab(_hex_to_rgb(entry.hex))
+            except ValueError:
+                matches.append({
+                    "input_hex": entry.hex,
+                    "input_name": entry.name,
+                    "best": None,
+                    "delta_e": None,
+                    "severity": "invalid",
+                })
+                continue
+            best = None
+            best_de = float("inf")
+            for fil in pool:
+                d = de(target_lab, fil["_lab"])
+                if d < best_de:
+                    best_de = d
+                    best = fil
+            if best is None:
+                matches.append({
+                    "input_hex": entry.hex.upper(),
+                    "input_name": entry.name,
+                    "best": None,
+                    "delta_e": None,
+                    "severity": "empty",
+                })
+            else:
+                # Strip internal _lab before returning.
+                public = {k: v for k, v in best.items() if k != "_lab"}
+                matches.append({
+                    "input_hex": entry.hex.upper(),
+                    "input_name": entry.name,
+                    "best": public,
+                    "delta_e": round(best_de, 2),
+                    "severity": severity(best_de),
+                })
+        worst = max(
+            (m["delta_e"] for m in matches if m["delta_e"] is not None),
+            default=None,
+        )
+        return {
+            "scope": body.scope,
+            "algorithm": body.algo,
+            "pool_size": len(pool),
+            "matches": matches,
+            "worst_delta_e": worst,
+        }
 
     return router

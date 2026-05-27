@@ -3,6 +3,7 @@ import { Download, FileBox, Layers, FileText, Wand2 } from "lucide-react";
 import { PaletteEditor } from "./PaletteEditor";
 import { JobHistory } from "./JobHistory";
 import { HelpHint } from "./HelpHint";
+import { LibraryMatchPanel } from "./LibraryMatchPanel";
 import { exportUrl } from "../lib/api";
 import { useQuota } from "../lib/quota";
 
@@ -195,6 +196,13 @@ export const StatsPanel = ({
         autoOrder={autoOrder}
         setAutoOrder={setAutoOrder}
         onPaletteSizeChange={onPaletteSizeChange}
+      />
+
+      <LibraryMatchPanel
+        palette={filaments.slice(0, maxActive)}
+        scope="mine"
+        testIdSuffix=""
+        emptyHint="Sign in and add your filaments to see whether this palette is reproducible on your printer."
       />
 
       <div className="border-t border-zinc-800" />

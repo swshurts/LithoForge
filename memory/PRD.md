@@ -470,6 +470,41 @@
       appearing in search when `include_private=true`, suggestion
       submission. **52/52 backend tests passing.**
 
+## Implemented (2026-02-26) — Library compatibility "closest match" warning
+
+- [x] **New endpoint** `POST /api/filament-library/match-palette`
+      scores any palette (`[{hex, name?}, ...]`) against three pools:
+      `scope="mine"` (user's private library, auth required),
+      `scope="manufacturer"` (global catalog) or `scope="both"`.
+      Returns one `{best, delta_e, severity}` per filament, with
+      severity bucketed as
+      **ok** (ΔE ≤ 5) / **close** (ΔE ≤ 12) / **far** (> 12), plus
+      the worst ΔE across the palette so callers can render a
+      single-line summary.
+- [x] **`LibraryMatchPanel.jsx`** — auto-fetches and renders:
+        - sign-out prompt for anonymous users
+        - empty-library prompt for signed-in users with no private SKUs
+        - colour-coded banner: **warn** (any far row), **info**
+          (any close row), **good** (all ok), with copy that explains
+          the consequences in plain English
+        - per-row table: input swatch · name → best swatch · brand ·
+          name, ΔE coloured green/yellow/red, badge for MINE vs MFR
+        - footnote explaining the ΔE 5/12 thresholds when warnings fire
+- [x] **StatsPanel integration** — panel now sits between PaletteEditor
+      and the Layer-allocation section, scoring the currently-active
+      palette (`filaments.slice(0, maxActive)`) against the creator's
+      private library. Fires the moment a swatch changes — no
+      Generate needed.
+- [x] **Marketplace listing integration** — `ListingDetail`
+      response now embeds the creator's `filaments[]`. The buyer-facing
+      listing page renders the same panel titled "Can I print this?"
+      so signed-in shoppers see a green / yellow / red verdict on
+      whether the listing is reproducible *before* they hit Buy.
+- [x] **Tests**: +3 backend tests (manufacturer scope ranking & invalid
+      hex handling, auth requirement on `scope=mine`, mine scope with
+      private SKUs catching near / far matches). **55/55 backend
+      pytests green.**
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

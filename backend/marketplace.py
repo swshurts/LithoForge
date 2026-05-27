@@ -46,6 +46,7 @@ class ListingPublic(BaseModel):
 class ListingDetail(ListingPublic):
     preview_png_base64: str
     platform_fee_pct: float = PLATFORM_FEE_PCT
+    filaments: List[Dict[str, Any]] = []
 
 
 class CreatorProfile(BaseModel):
@@ -183,6 +184,11 @@ def build_marketplace_router(
         return ListingDetail(
             **public.model_dump(),
             preview_png_base64=job.get("preview_png_base64", ""),
+            filaments=[
+                {"name": f.get("name", ""), "hex": f.get("hex", "#000000"),
+                 "td": float(f.get("td", 1.0))}
+                for f in (job.get("filaments") or [])
+            ],
         )
 
     @router.get("/creators/{user_id}", response_model=CreatorProfile)

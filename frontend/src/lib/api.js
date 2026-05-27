@@ -87,6 +87,18 @@ export const suggestFilament = async (payload) => {
   return data;
 };
 
+// POST a palette → get a ranked "closest match" per filament against
+// the user's private library (scope='mine'), the global manufacturer
+// catalog (scope='manufacturer'), or both. Used by the LibraryMatchPanel
+// to warn users when their palette can't be reproduced.
+export const matchPalette = async (filaments, { scope = "mine", algo = "de2000" } = {}) => {
+  const { data } = await api.post("/filament-library/match-palette", {
+    filaments: filaments.map((f) => ({ hex: f.hex, name: f.name })),
+    scope, algo,
+  });
+  return data;
+};
+
 export const exportUrl = (jobId, kind) => `${API}/export/${jobId}/${kind}`;
 
 // --- Cloud presets (authenticated) ----------------------------------

@@ -113,3 +113,85 @@ def test_suggest_endpoint(authed_client):
     r = authed_client.post(f"{API}/filament-library/suggest", json=payload)
     assert r.status_code == 200
     assert r.json() == {"ok": True}
+
+
+def test_match_palette_manufacturer_scope():
+    payload = {
+        "filaments": [
+            {"hex": "#FF7A00", "name": "Orange"},
+            {"hex": "#000000", "name": "Key"},
+            {"hex": "#0086D6", "name": "Cyan"},
+            {"hex": "#zzz",     "name": "Bad input"},
+        ],
+        "scope": "manufacturer",
+        "algo": "de2000",
+    }
+    r = requests.post(f"{API}/filament-library/match-palette", json=payload)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["algorithm"] == "de2000"
+    assert body["pool_size"] > 80
+    matches = body["matches"]
+    assert len(matches) == 4
+    # First match should be an orange in the catalog with low ΔE
+    assert matches[0]["best"] is not None
+    assert matches[0]["delta_e"] < 5
+    assert matches[0]["severity"] == "ok"
+    # Black should resolve to a near-black SKU
+    assert "black" in matches[1]["best"]["name"].lower() \
+        or "charcoal" in matches[1]["best"]["name"].lower() \
+        or "key" in matches[1]["best"]["name"].lower()
+    # Invalid hex returns severity=invalid + null best
+    assert matches[3]["severity"] == "invalid"
+    assert matches[3]["best"] is None
+    assert isinstance(body["worst_delta_e"], (int, float))
+
+
+def test_match_palette_mine_requires_auth():
+    payload = {
+        "filaments": [{"hex": "#FF0000"}],
+        "scope": "mine",
+    }
+    r = requests.post(f"{API}/filament-library/match-palette", json=payload)
+    assert r.status_code == 401
+
+
+def test_match_palette_mine_with_private_lib(authed_client):
+    # Seed a single matte red into the private library.
+    seed = {"brand": "TestBrand", "name": "Match Red",
+            "hex": "#CC2233", "td": 1.3, "finish": "matte"}
+    r = authed_client.post(f"{API}/filament-library/mine", json=seed)
+    fid = r.json()["id"]
+    try:
+        # A bright red palette entry should resolve to "Match Red"
+        payload = {
+            "filaments": [{"hex": "#D31C28", "name": "Bright Red"}],
+            "scope": "mine",
+            "algo": "de2000",
+        }
+        r = authed_client.post(f"{API}/filament-library/match-palette",
+                               json=payload)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["pool_size"] == 1, body
+        m = body["matches"][0]
+        assert m["best"]["id"] == fid
+        # ΔE between #D31C28 and #CC2233 is small.
+        assert m["delta_e"] < 8
+        assert m["severity"] in ("ok", "close")
+
+        # A palette colour FAR from private library should mark `far`.
+        payload2 = {
+            "filaments": [{"hex": "#00AA66"}],
+            "scope": "mine",
+            "algo": "de2000",
+        }
+        r = authed_client.post(f"{API}/filament-library/match-palette",
+                               json=payload2)
+        assert r.status_code == 200
+        m2 = r.json()["matches"][0]
+        assert m2["severity"] == "far"
+        assert m2["delta_e"] > 12
+    finally:
+        authed_client.delete(f"{API}/filament-library/mine/{fid}")
+

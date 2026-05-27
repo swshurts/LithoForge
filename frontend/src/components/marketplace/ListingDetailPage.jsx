@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { Layers, ShoppingBag, User as UserIcon } from "lucide-react";
 import { MarketplaceHeader } from "./MarketplaceHeader";
 import { PurchaseDialog } from "./PurchaseDialog";
+import { LibraryMatchPanel } from "../LibraryMatchPanel";
 import { getListingDetail } from "../../lib/api";
 
 export const ListingDetailPage = () => {
@@ -144,6 +145,16 @@ export const ListingDetailPage = () => {
                 <Layers className="w-3 h-3" />
                 {listing.total_layers} layers · {listing.render_mode}
               </div>
+
+              {listing.filaments && listing.filaments.length > 0 && (
+                <LibraryMatchPanel
+                  palette={listing.filaments}
+                  scope="mine"
+                  testIdSuffix="-listing"
+                  title="Can I print this?"
+                  emptyHint="Sign in and add your filaments to instantly see whether you can reproduce this listing's palette."
+                />
+              )}
             </div>
           </div>
         )}
