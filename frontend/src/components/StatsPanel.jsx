@@ -32,6 +32,29 @@ const quality = (de) => {
   return { label: "FAR", color: "#ef4444" };
 };
 
+/**
+ * Browser-portable download helper.
+ *
+ * 1. Fetch the file with credentials so we can catch 401/402 (quota/auth)
+ *    BEFORE attempting a browser download. The backend's quota counter
+ *    increments on every successful GET, so we can't HEAD-preflight.
+ * 2. On desktop, trigger the classic `<a download>` synthetic click.
+ * 3. On iOS / iPadOS WebKit (Safari, Chrome, Firefox all use WebKit on
+ *    iOS), the `download` attribute is silently ignored — the file
+ *    either opens in the same tab or nothing happens, which the user
+ *    perceives as "export failed". Instead, open the blob URL in a new
+ *    tab so the browser's native "Share → Save to Files" UI surfaces.
+ *    Fall back to in-place navigation if popups are blocked.
+ */
+const isIOSWebKit = () => {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  // iPadOS 13+ reports as Mac — distinguishable by touch support.
+  if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
+  return false;
+};
+
 const downloadFile = async (url, filename) => {
   const res = await fetch(url, { credentials: "include" });
   if (!res.ok) {
@@ -50,13 +73,32 @@ const downloadFile = async (url, filename) => {
   }
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = blobUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+
+  if (isIOSWebKit()) {
+    // iOS workaround: open the blob in a new tab. The browser's native
+    // viewer/sheet then offers Share → Save to Files.
+    const win = window.open(blobUrl, "_blank");
+    if (!win || win.closed || typeof win.closed === "undefined") {
+      // Popup blocked — navigate in-place. The user loses the studio
+      // tab temporarily but at least gets the file.
+      window.location.href = blobUrl;
+    }
+  } else {
+    // Desktop / Android: classic synthetic anchor click. `target=_blank`
+    // helps belt-and-suspenders if the user's browser ignores `download`.
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = filename;
+    link.rel = "noopener";
+    link.target = "_blank";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  // Hold the blob URL alive long enough for the new tab to fully parse
+  // the binary on slower iPads.
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
 };
 
 const DownloadButton = ({ url, filename, icon: Icon, label, sub, testid }) => {
