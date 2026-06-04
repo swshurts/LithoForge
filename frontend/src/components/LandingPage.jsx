@@ -115,7 +115,7 @@ const Hero = () => (
         <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-black tracking-tighter leading-[0.95]">
           Print photographs.
           <br />
-          <span className="text-zinc-500">In</span> full colour.
+          <span className="text-zinc-500">In</span> Multi colour.
         </h1>
         <p className="font-mono text-sm sm:text-base text-zinc-300 leading-relaxed max-w-xl">
           LithoForge turns any photo into a layered CMYKW lithophane that
@@ -351,24 +351,41 @@ const SisterTool = () => (
         target="_blank"
         rel="noopener noreferrer"
         data-testid="sister-tool-banner"
-        className="group block border border-zinc-800 hover:border-zinc-500 transition-colors px-6 py-7 sm:flex items-center justify-between gap-6"
+        className="group block border border-zinc-800 hover:border-amber-500/60 transition-colors p-2 sm:p-3"
       >
-        <div className="space-y-2">
-          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500 flex items-center gap-1.5">
-            <ExternalLink className="w-3 h-3" /> Sister tool
+        <div className="sm:flex items-stretch gap-6">
+          <div
+            className="relative flex-shrink-0 w-full sm:w-56 aspect-square bg-zinc-900 overflow-hidden border border-zinc-800 group-hover:border-amber-500/40 transition-colors"
+            data-testid="sister-tool-logo"
+          >
+            <img
+              src="/forgeslicer-logo.webp"
+              alt="ForgeSlicer.com — anvil with hot steel and sparks"
+              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+              loading="lazy"
+              width={448}
+              height={448}
+            />
+            {/* radial vignette to blend the image into the dark panel */}
+            <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-black/40" />
           </div>
-          <div className="font-display text-2xl sm:text-3xl font-black tracking-tight leading-tight">
-            ForgeSlicer.com — colour-aware slicing.
+          <div className="flex-1 flex flex-col justify-center px-4 py-5 sm:py-2 space-y-2">
+            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-amber-400/70 flex items-center gap-1.5">
+              <ExternalLink className="w-3 h-3" /> Sister tool
+            </div>
+            <div className="font-display text-2xl sm:text-3xl font-black tracking-tight leading-tight">
+              ForgeSlicer.com — colour-aware slicing.
+            </div>
+            <p className="font-mono text-[11px] text-zinc-400 max-w-xl leading-relaxed">
+              LithoForge designs lithophanes; ForgeSlicer prepares the
+              G-code. Use them together for a colour-managed pipeline
+              from photograph to print bed.
+            </p>
+            <div className="pt-2 flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-[0.2em] text-zinc-300 group-hover:text-amber-100 transition-colors">
+              Visit ForgeSlicer.com
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </div>
           </div>
-          <p className="font-mono text-[11px] text-zinc-400 max-w-xl leading-relaxed">
-            LithoForge designs lithophanes; ForgeSlicer prepares the
-            G-code. Use them together for a colour-managed pipeline
-            from photograph to print bed.
-          </p>
-        </div>
-        <div className="mt-5 sm:mt-0 flex-shrink-0 flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-[0.2em] text-zinc-300 group-hover:text-zinc-100">
-          Visit ForgeSlicer.com
-          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
         </div>
       </a>
     </div>

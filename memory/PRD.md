@@ -505,6 +505,19 @@
       private SKUs catching near / far matches). **55/55 backend
       pytests green.**
 
+## Implemented (2026-02-26) — Landing copy + ForgeSlicer artwork
+
+- [x] Hero copy correction: "In full colour" → **"In Multi colour"**
+      (we're a multi-filament process; nobody has true full-gamut
+      colour printing yet, the previous claim was inaccurate).
+- [x] **ForgeSlicer logo added** to the sister-tool banner. Artwork
+      (`/forgeslicer-logo.webp`, 1024×1024 anvil with hot steel +
+      sparks) saved to `frontend/public/` and rendered as a 224 px
+      square card on the left of the banner with an amber-accented
+      "Sister tool" label, hover-zoom on the image, and an amber
+      border-glow on hover that picks up the spark colour from the
+      artwork.
+
 ## Implemented (2026-02-26) — Landing page + sister-tool link
 
 - [x] **New `/` route** renders `LandingPage.jsx` (was Studio). Studio
