@@ -135,7 +135,7 @@ export const PricingPage = () => {
                 </ul>
                 {p.id === "free" ? (
                   <Link
-                    to="/"
+                    to="/studio"
                     data-testid={`pricing-${p.id}-cta`}
                     className="block w-full bg-zinc-100 text-zinc-950 py-2 text-center font-mono text-[10px] uppercase tracking-[0.18em] font-bold hover:bg-white transition-colors"
                   >
@@ -186,7 +186,7 @@ export const PricingPage = () => {
 
         <div className="text-center">
           <Link
-            to="/"
+            to="/studio"
             data-testid="pricing-back-to-studio"
             className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-100 border border-zinc-800 hover:border-zinc-500 px-4 py-2 inline-block transition-colors"
           >

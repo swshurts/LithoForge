@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import "@/index.css";
 import App from "@/App";
+import { LandingPage } from "@/components/LandingPage";
 import { MarketplacePage } from "@/components/marketplace/MarketplacePage";
 import { CreatorPage } from "@/components/marketplace/CreatorPage";
 import { ListingDetailPage } from "@/components/marketplace/ListingDetailPage";
@@ -35,7 +36,8 @@ root.render(
               }}
             />
             <Routes>
-              <Route path="/" element={<App />} />
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/studio" element={<App />} />
               <Route path="/marketplace" element={<MarketplacePage />} />
               <Route path="/marketplace/:jobId" element={<ListingDetailPage />} />
               <Route path="/marketplace/:jobId/success" element={<PurchaseSuccessPage />} />

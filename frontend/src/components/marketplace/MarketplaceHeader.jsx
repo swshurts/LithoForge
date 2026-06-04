@@ -35,7 +35,7 @@ export const MarketplaceHeader = ({ subtitle }) => (
     </div>
     <div className="flex items-center gap-3">
       <Link
-        to="/"
+        to="/studio"
         data-testid="back-to-studio"
         className="flex items-center gap-1.5 px-3 py-1.5 border border-zinc-700 hover:border-zinc-400 hover:bg-zinc-900 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-200 transition-colors"
       >

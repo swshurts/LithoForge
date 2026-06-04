@@ -505,6 +505,41 @@
       private SKUs catching near / far matches). **55/55 backend
       pytests green.**
 
+## Implemented (2026-02-26) — Landing page + sister-tool link
+
+- [x] **New `/` route** renders `LandingPage.jsx` (was Studio). Studio
+      moved to `/studio`. Routes updated in `index.js`; all in-app
+      "Back to studio" / pricing free-tier CTA / payouts shortcuts
+      now point to `/studio`.
+- [x] **Landing sections**:
+        - Sticky `LandingHeader` with logo (links to `/`), sister-tool
+          chip, Marketplace / Pricing / Sign-in nav, and a primary
+          "Open studio" button on the right.
+        - Hero with tagline ("Print photographs. In full colour."),
+          subhead, primary "Open the studio" CTA + secondary "Browse
+          marketplace", "5 free downloads" trust note, and a
+          decorative CMYK quad / ΔE keystone visual.
+        - **How it works** — three-step walkthrough: Upload → Tune
+          palette → Generate & print, each with a lucide icon and a
+          plain-English paragraph that mentions Beer-Lambert, the AI
+          palette suggester, and the auto-pause 3MF export.
+        - **What's inside** — six-card feature grid mentioning the
+          Lab ΔE optimizer, the 9-brand manufacturer library, 3MF +
+          M600 G-code injection, geometry options (flat / curve /
+          cylindrical / disc), the marketplace + Stripe payouts and
+          the new library compatibility check.
+        - **Sister-tool plug** for **ForgeSlicer.com** — large
+          clickable banner that opens in a new tab.
+        - Final CTA ("Ready to print a photograph?") and footer with
+          App / Adjacent columns including a ForgeSlicer.com link.
+- [x] **Studio header** (`Header.jsx`) — logo now links to `/`
+      (landing); a "Sister tool: ForgeSlicer.com →" chip sits left of
+      Pricing / Marketplace, matching the landing-header version, so
+      ForgeSlicer is reachable from every studio session.
+- [x] **MarketplaceHeader / PricingPage / PayoutsPage** — every
+      "Back to studio" or studio shortcut updated to `/studio` so
+      navigation stays consistent now that `/` is the landing.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

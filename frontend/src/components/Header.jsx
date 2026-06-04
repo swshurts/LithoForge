@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Zap, Store } from "lucide-react";
+import { Zap, Store, ExternalLink } from "lucide-react";
 import { UserMenu } from "./UserMenu";
 import { QuotaCounter } from "./QuotaCounter";
 
@@ -11,9 +11,9 @@ export const Header = ({ onGenerate, canGenerate, generating }) => {
       data-testid="header"
     >
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2.5">
+        <Link to="/" className="flex items-center gap-2.5 group" data-testid="header-home-link">
           <div className="relative w-7 h-7 flex items-center justify-center">
-            <div className="absolute inset-0 border border-zinc-700" />
+            <div className="absolute inset-0 border border-zinc-700 group-hover:border-zinc-400 transition-colors" />
             <div className="absolute top-0 left-0 w-2 h-2 bg-cmyk-c" />
             <div className="absolute top-0 right-0 w-2 h-2 bg-cmyk-m" />
             <div className="absolute bottom-0 left-0 w-2 h-2 bg-cmyk-y" />
@@ -27,13 +27,23 @@ export const Header = ({ onGenerate, canGenerate, generating }) => {
               Photo · Beer-Lambert
             </div>
           </div>
-        </div>
+        </Link>
         <div className="hidden md:flex items-center gap-3 pl-4 border-l border-zinc-800">
           <QuotaCounter />
         </div>
       </div>
 
       <div className="flex items-center gap-3">
+        <a
+          href="https://forgeslicer.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="header-sister-tool-link"
+          className="hidden md:flex items-center gap-1.5 px-2.5 py-1 border border-zinc-800 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 font-mono text-[10px] uppercase tracking-[0.15em] transition-colors duration-150"
+        >
+          <ExternalLink className="w-3 h-3" strokeWidth={1.5} />
+          Sister tool: ForgeSlicer.com&nbsp;→
+        </a>
         <Link
           to="/pricing"
           data-testid="header-pricing-link"

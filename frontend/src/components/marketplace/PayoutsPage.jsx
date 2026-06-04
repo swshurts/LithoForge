@@ -90,7 +90,7 @@ export const PayoutsPage = () => {
             Sign in to continue
           </button>
           <Link
-            to="/"
+            to="/studio"
             className="block font-mono text-[10px] text-zinc-500 hover:text-zinc-200 underline mt-4"
           >
             ← Back to studio
@@ -119,7 +119,7 @@ export const PayoutsPage = () => {
             </h1>
           </div>
           <Link
-            to="/"
+            to="/studio"
             className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-100 border border-zinc-800 hover:border-zinc-500 px-3 py-2 transition-colors"
           >
             Studio →
