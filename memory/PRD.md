@@ -553,6 +553,29 @@
       "Back to studio" or studio shortcut updated to `/studio` so
       navigation stays consistent now that `/` is the landing.
 
+## Implemented (2026-02-26) — Export download flow hardening
+
+- [x] **Root cause** — Recent `target="_blank"` added to the synthetic
+      download anchor as a "belt-and-suspenders" iOS hack ended up
+      silently breaking desktop Chrome: when an `<a>` carries both
+      `download` AND `target="_blank"` AND is `.click()`'d *after* an
+      `await fetch(...)`, Chrome's popup-blocker considers the user-
+      gesture chain broken and silently blocks the action. Result on
+      the user's laptop: clicking STL / 3MF / Swap Instructions did
+      *nothing* — no file, no toast, no modal.
+- [x] **Fix** (`StatsPanel.jsx::downloadFile`) — removed
+      `link.target = "_blank"` from the desktop branch (it's still
+      used in the iOS branch via `window.open(blobUrl, "_blank")`,
+      which is the correct iOS-friendly path).
+- [x] **Confirmation toast** — every successful download now fires a
+      `toast.success("Downloaded {filename}")` so the user gets visible
+      confirmation even if Chrome's downloads dock is collapsed or
+      they missed the file landing.
+- [x] **Verified end-to-end** with a seeded PRO user via Playwright:
+      STL (9.6 MB · `model/stl`), Swap Instructions (2.1 KB ·
+      `text/plain`) and 3MF (1.4 MB · `model/3mf`) all download
+      cleanly, success toast surfaces.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

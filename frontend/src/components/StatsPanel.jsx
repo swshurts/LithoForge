@@ -84,13 +84,14 @@ const downloadFile = async (url, filename) => {
       window.location.href = blobUrl;
     }
   } else {
-    // Desktop / Android: classic synthetic anchor click. `target=_blank`
-    // helps belt-and-suspenders if the user's browser ignores `download`.
+    // Desktop / Android: classic synthetic anchor click. DO NOT add
+    // `target=_blank` — combined with `download` it can confuse Chrome's
+    // popup blocker (the user-gesture chain is broken by the async
+    // fetch above), causing the download to be silently blocked.
     const link = document.createElement("a");
     link.href = blobUrl;
     link.download = filename;
     link.rel = "noopener";
-    link.target = "_blank";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -110,8 +111,17 @@ const DownloadButton = ({ url, filename, icon: Icon, label, sub, testid }) => {
     setBusy(true);
     try {
       await downloadFile(url, filename);
-      // Successful download — bump the quota counter in the header.
+      // Successful download — bump the quota counter in the header
+      // and show a confirmation toast so users know the file landed
+      // (Chrome's download dock can be easy to miss if collapsed).
       refresh();
+      try {
+        (await import("sonner")).toast.success(`Downloaded ${filename}`, {
+          duration: 3500,
+        });
+      } catch {
+        /* sonner unavailable — silent */
+      }
     } catch (err) {
       // 401 (sign-in required) and 402 (quota exhausted) both open the
       // upgrade/sign-in modal. Everything else surfaces as a toast.
