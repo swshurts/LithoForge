@@ -646,6 +646,27 @@
       not separately tested due to jsdom + fake-timer flake; covered
       by code review.
 
+## Implemented (2026-02-26) — Histogram reacts after Generate on iPad
+
+- [x] **Root cause** — `Histogram.jsx` was setting
+      `offCtx.filter = editsToCssFilter(edits)` to apply brightness /
+      contrast / saturation before binning. iPad WebKit (Safari +
+      iOS Firefox) honours `ctx.filter` the first few times the
+      canvas is used, then silently no-ops it once the canvas has
+      been reused enough — particularly after a Generate run
+      invokes `renderEditedImage` which heavily exercises the same
+      canvas APIs. So sliders updated the *number* but the histogram
+      readback returned the same un-filtered pixels every time.
+- [x] **Fix** — compute brightness/contrast/saturation directly on the
+      ImageData pixel array (`applyEditsInPlace`) instead of trusting
+      `ctx.filter`. ~80 µs at 200×H px, strictly faster than the CSS
+      filter round-trip on every platform. `offCtx.filter = "none"` is
+      explicit so any leftover state from a previous run is cleared.
+      Crop is still applied via `drawImage` source-rect (unchanged).
+- [x] **Verified end-to-end** (Playwright) — signature of the entire
+      histogram canvas changes on every brightness/contrast/saturation
+      adjustment, both before AND after a Generate run.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

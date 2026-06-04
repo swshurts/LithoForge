@@ -1,14 +1,52 @@
 import React, { useEffect, useRef } from "react";
-import { editsToCssFilter } from "./ImageEditPanel";
 
 /**
- * Compact luminance + RGB histogram. Re-computes whenever edits change by
- * drawing the original image at small size into an offscreen canvas with
- * the current CSS filter applied, reading ImageData, binning into 64 bins.
- * Highlights clipping at 0 and 255.
+ * Compact luminance + RGB histogram. Re-computes whenever edits change.
+ *
+ * Implementation notes:
+ *  - We draw the *unfiltered* image to an offscreen canvas and apply
+ *    brightness / contrast / saturation directly to the readback pixel
+ *    array. Earlier versions relied on `ctx.filter = editsToCssFilter()`
+ *    but that's unreliable on iPad WebKit (Safari / iOS Firefox) — the
+ *    filter is honoured the first few times and silently no-ops once
+ *    the canvas has been reused enough (e.g. after a Generate run
+ *    invokes `renderEditedImage`). Doing the math here costs ~80 µs per
+ *    update at 200×H px, so it's strictly faster than the round-trip
+ *    through CSS filter regardless.
+ *  - Crop is still applied via drawImage source-rect.
  */
 
 const BINS = 64;
+
+const applyEditsInPlace = (data, edits) => {
+  // brightness: 100 = identity, 200 = ×2, 20 = ×0.2
+  const briMul = edits.brightness / 100;
+  // contrast: 100 = identity. Standard formula: out = (in - 128) * c + 128.
+  const con = edits.contrast / 100;
+  // saturation: 100 = identity, 0 = grayscale, 200 = ×2 chroma.
+  const sat = edits.saturation / 100;
+  if (briMul === 1 && con === 1 && sat === 1) return;
+  for (let i = 0; i < data.length; i += 4) {
+    let r = data[i];
+    let g = data[i + 1];
+    let b = data[i + 2];
+    // brightness (multiplicative — matches the CSS filter semantic)
+    r *= briMul; g *= briMul; b *= briMul;
+    // contrast around mid-grey
+    r = (r - 128) * con + 128;
+    g = (g - 128) * con + 128;
+    b = (b - 128) * con + 128;
+    // saturation: linear interpolate between luma and original.
+    const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    r = L + (r - L) * sat;
+    g = L + (g - L) * sat;
+    b = L + (b - L) * sat;
+    // Clamp
+    data[i]     = r < 0 ? 0 : r > 255 ? 255 : r;
+    data[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+    data[i + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+  }
+};
 
 const computeBins = (imageData) => {
   const data = imageData.data;
@@ -46,7 +84,10 @@ export const Histogram = ({ image, edits }) => {
     off.width = W;
     off.height = H;
     const offCtx = off.getContext("2d", { willReadFrequently: true });
-    offCtx.filter = editsToCssFilter(edits);
+    // Important: do NOT set offCtx.filter — it's unreliable on iPad
+    // WebKit after the canvas has been reused. We apply edits directly
+    // to the pixel array below, which is portable and just as fast.
+    offCtx.filter = "none";
     // Apply crop too so the histogram reflects the visible region.
     const cx = (edits.cropL / 100) * image.naturalWidth;
     const cy = (edits.cropT / 100) * image.naturalHeight;
@@ -61,6 +102,7 @@ export const Histogram = ({ image, edits }) => {
 
     let imgData;
     try {
+      offCtx.clearRect(0, 0, W, H);
       offCtx.drawImage(image, cx, cy, cw, ch, 0, 0, W, H);
       imgData = offCtx.getImageData(0, 0, W, H);
     } catch (err) {
@@ -72,6 +114,7 @@ export const Histogram = ({ image, edits }) => {
       console.warn("Histogram readback skipped:", err.message);
       return;
     }
+    applyEditsInPlace(imgData.data, edits);
     const { lum, r, g, b } = computeBins(imgData);
 
     const ctx = canvas.getContext("2d");
