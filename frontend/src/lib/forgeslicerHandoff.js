@@ -23,7 +23,6 @@
 
 const FORGESLICER_ORIGIN = "https://forgeslicer.com";
 const FORGESLICER_HANDOFF_URL = `${FORGESLICER_ORIGIN}/handoff`;
-const HANDSHAKE_TIMEOUT_MS = 60_000;
 
 export class PopupBlocked extends Error {}
 export class AuthRequired extends Error {}
@@ -32,88 +31,118 @@ export class HandoffTimeout extends Error {}
 /**
  * Kick off the handoff for the given STL URL.
  *
+ * Race-condition note: ForgeSlicer mounts its handoff page fast and
+ * fires `{type:"forgeslicer:handoff:ready"}` within ~200 ms. The STL
+ * fetch can take several seconds, especially for 10 MB+ files. So we
+ * MUST attach our `message` listener immediately after window.open()
+ * — before awaiting fetch — otherwise ForgeSlicer's `ready` ping
+ * arrives before our listener exists, gets silently dropped, and the
+ * sister page hits its own 20 s timeout showing "Handoff didn't
+ * complete". The implementation below uses a small state machine:
+ *
+ *   [POPUP_OPENED] ──ready arrives──▶ [READY_BUFFERED] ──fetch done──▶ POST
+ *           │                                 │
+ *           └───────fetch done────────▶ [STL_READY] ──ready arrives──▶ POST
+ *
+ * Either ordering ends with a single postMessage; once that happens
+ * the listener is removed and the timeout is cleared.
+ *
  * @param {object} args
  * @param {string} args.stlUrl    — Absolute URL the auth'd browser can
- *                                  GET to retrieve the STL (e.g.
- *                                  /api/export/{jobId}/stl).
+ *                                  GET to retrieve the STL.
  * @param {string} args.filename  — Suggested filename for ForgeSlicer.
  * @param {string} args.sourceUrl — Deep-link back to this LithoForge job.
  * @returns {Promise<void>}       resolves once we've posted the STL.
  *                                rejects on popup-block / auth / timeout.
  */
-export const sendToForgeSlicer = async ({ stlUrl, filename, sourceUrl }) => {
-  // 1. Open the popup synchronously from the user gesture. Anything async
-  //    BEFORE window.open() will trip Chrome / Safari popup blockers.
-  const popup = window.open(FORGESLICER_HANDOFF_URL, "_blank");
-  if (!popup || popup.closed || typeof popup.closed === "undefined") {
-    throw new PopupBlocked(
-      "ForgeSlicer popup was blocked — allow popups for this site to use the handoff.",
-    );
-  }
+export const sendToForgeSlicer = ({ stlUrl, filename, sourceUrl }) =>
+  new Promise((resolve, reject) => {
+    // 1. Open the popup synchronously from the user gesture.
+    const popup = window.open(FORGESLICER_HANDOFF_URL, "_blank");
+    if (!popup || popup.closed || typeof popup.closed === "undefined") {
+      reject(new PopupBlocked(
+        "ForgeSlicer popup was blocked — allow popups for this site to use the handoff.",
+      ));
+      return;
+    }
 
-  // 2. In parallel: fetch the STL with credentials.
-  let arrayBuffer;
-  try {
-    const res = await fetch(stlUrl, { credentials: "include" });
-    if (res.status === 401) {
-      popup.close();
-      throw new AuthRequired("Sign in to send to ForgeSlicer.");
-    }
-    if (!res.ok) {
-      popup.close();
-      throw new Error(`STL fetch failed (${res.status})`);
-    }
-    arrayBuffer = await res.arrayBuffer();
-  } catch (err) {
-    if (!(err instanceof AuthRequired)) {
-      try { popup.close(); } catch { /* noop */ }
-    }
-    throw err;
-  }
-
-  // 3. Wait for ForgeSlicer to signal readiness, then ship the bytes.
-  return new Promise((resolve, reject) => {
+    // 2. Pre-attach the listener IMMEDIATELY so we don't miss the
+    //    `ready` ping that ForgeSlicer fires before our fetch resolves.
+    let readyReceived = false;
+    let stlBuffer = null;
     let settled = false;
-    const finish = (fn) => (...args) => {
-      if (settled) return;
+
+    const cleanup = () => {
       settled = true;
       window.removeEventListener("message", onMessage);
       clearTimeout(timer);
+    };
+
+    const finish = (fn) => (...args) => {
+      if (settled) return;
+      cleanup();
       fn(...args);
     };
 
-    const onMessage = (e) => {
-      // Strict origin check — never trust a postMessage without it.
-      if (e.origin !== FORGESLICER_ORIGIN) return;
-      if (e.data?.type !== "forgeslicer:handoff:ready") return;
+    const post = () => {
+      if (settled) return;
       try {
         popup.postMessage(
           {
             type: "forgeslicer:handoff:stl",
             filename,
-            data: arrayBuffer,
+            data: stlBuffer,
             sourceLabel: "LithoForge",
             sourceUrl,
           },
           FORGESLICER_ORIGIN,
-          // Transfer the ArrayBuffer for zero-copy efficiency on large
-          // STLs (some can be > 10 MB).
-          [arrayBuffer],
+          [stlBuffer], // zero-copy transfer
         );
         finish(resolve)();
       } catch (err) {
         finish(reject)(err);
       }
     };
+
+    const onMessage = (e) => {
+      // Strict origin check — never trust a postMessage without it.
+      if (e.origin !== FORGESLICER_ORIGIN) return;
+      if (e.data?.type !== "forgeslicer:handoff:ready") return;
+      readyReceived = true;
+      if (stlBuffer) post();
+    };
     window.addEventListener("message", onMessage);
 
+    // 3. Generous 90 s timeout (handles slow 4G + 30 MB STLs).
     const timer = setTimeout(() => {
       try { popup.close(); } catch { /* noop */ }
       finish(reject)(new HandoffTimeout(
-        "ForgeSlicer didn't respond within 60 s — please try again.",
+        "ForgeSlicer didn't respond within 90 s — please try again.",
       ));
-    }, HANDSHAKE_TIMEOUT_MS);
+    }, 90_000);
+
+    // 4. Fetch the STL in parallel. If `ready` is already buffered when
+    //    the fetch resolves, fire immediately.
+    (async () => {
+      try {
+        const res = await fetch(stlUrl, { credentials: "include" });
+        if (res.status === 401) {
+          try { popup.close(); } catch { /* noop */ }
+          finish(reject)(new AuthRequired("Sign in to send to ForgeSlicer."));
+          return;
+        }
+        if (!res.ok) {
+          try { popup.close(); } catch { /* noop */ }
+          finish(reject)(new Error(`STL fetch failed (${res.status})`));
+          return;
+        }
+        stlBuffer = await res.arrayBuffer();
+        if (readyReceived) post();
+      } catch (err) {
+        try { popup.close(); } catch { /* noop */ }
+        finish(reject)(err);
+      }
+    })();
   });
-};
 
 export { FORGESLICER_ORIGIN };

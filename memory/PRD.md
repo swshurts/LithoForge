@@ -667,6 +667,44 @@
       histogram canvas changes on every brightness/contrast/saturation
       adjustment, both before AND after a Generate run.
 
+## Implemented (2026-02-26) — ForgeSlicer handoff race-condition fix
+
+- [x] **Root cause** — ForgeSlicer mounts `/handoff` and fires
+      `{type:"forgeslicer:handoff:ready"}` within ~200 ms. The STL
+      fetch on LithoForge's side can take several seconds, especially
+      on 10 MB+ files. v1 attached the `message` listener AFTER
+      awaiting fetch, so the `ready` ping arrived before any listener
+      existed and was silently dropped — ForgeSlicer's own 20 s
+      timeout then surfaced "Handoff didn't complete".
+- [x] **Fix** (`forgeslicerHandoff.js`) — rewrote as a small two-state
+      machine. The `message` listener is attached IMMEDIATELY after
+      `window.open()`, the fetch runs in parallel, and the
+      `postMessage` to ForgeSlicer fires the moment BOTH conditions
+      are met (ready buffered + STL fetched). Either ordering ends
+      with a single post; listener and timer are cleaned up on
+      resolve/reject. Timeout bumped from 60 s → 90 s to handle slow
+      4G + large STLs.
+- [x] **Jest tests** — 3/3 still passing for happy-path, popup-block
+      and 401 paths. The "ready arrives before fetch" race is now
+      structurally impossible.
+
+### ⚠️ Receiver-side note for the ForgeSlicer side
+
+While LithoForge is on a preview environment its `e.origin` is the
+preview URL (e.g. `https://color-match-slicer.preview.emergentagent.com`),
+NOT `https://lithoforge.com`. ForgeSlicer's `/handoff` listener needs
+an origin allow-list to accept both during dev:
+```js
+const ALLOWED = new Set([
+  "https://lithoforge.com",
+  "https://color-match-slicer.preview.emergentagent.com",  // remove on prod launch
+]);
+window.addEventListener("message", e => {
+  if (!ALLOWED.has(e.origin)) return;
+  if (e.data?.type === "forgeslicer:handoff:stl") { /* ... */ }
+});
+```
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG
