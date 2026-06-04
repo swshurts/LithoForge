@@ -55,9 +55,16 @@ const LandingHeader = () => (
         target="_blank"
         rel="noopener noreferrer"
         data-testid="sister-tool-link"
-        className="hidden md:flex items-center gap-1.5 px-2.5 py-1 border border-zinc-800 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 font-mono text-[10px] uppercase tracking-[0.15em] transition-colors duration-150"
+        className="hidden md:flex items-center gap-1.5 pl-1 pr-2.5 py-1 border border-zinc-800 hover:border-amber-500/60 text-zinc-300 hover:text-zinc-100 font-mono text-[10px] uppercase tracking-[0.15em] transition-colors duration-150"
       >
-        <ExternalLink className="w-3 h-3" strokeWidth={1.5} />
+        <img
+          src="/forgeslicer-logo.webp"
+          alt=""
+          aria-hidden="true"
+          className="w-4 h-4 object-cover border border-zinc-800"
+          width={16}
+          height={16}
+        />
         Sister tool: ForgeSlicer.com&nbsp;→
       </a>
       <Link
@@ -149,41 +156,33 @@ const Hero = () => (
         </div>
       </div>
 
-      {/* CMYK quad visual */}
-      <div className="hidden lg:block">
-        <div className="relative w-full aspect-square max-w-[420px] mx-auto">
-          <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 gap-2">
-            <div className="bg-cmyk-c/90 relative">
-              <div className="absolute bottom-2 left-2 font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-100/80">
-                Cyan
-              </div>
-            </div>
-            <div className="bg-cmyk-m/90 relative">
-              <div className="absolute bottom-2 left-2 font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-100/90">
-                Magenta
-              </div>
-            </div>
-            <div className="bg-cmyk-y/90 relative">
-              <div className="absolute bottom-2 left-2 font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-950/80">
-                Yellow
-              </div>
-            </div>
-            <div className="bg-zinc-950 border border-zinc-700 relative">
-              <div className="absolute bottom-2 left-2 font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-400">
-                Key / W
-              </div>
-            </div>
+      {/* ForgeSlicer (sister-tool) anvil — above-the-fold hero visual */}
+      <div className="hidden lg:block" data-testid="hero-anvil">
+        <a
+          href="https://forgeslicer.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group block relative w-full aspect-square max-w-[420px] mx-auto border border-zinc-800 hover:border-amber-500/60 transition-colors overflow-hidden"
+        >
+          <img
+            src="/forgeslicer-logo.webp"
+            alt="ForgeSlicer.com — sister tool"
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+            width={420}
+            height={420}
+          />
+          {/* gradient + label overlay */}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/30 to-transparent" />
+          <div className="absolute left-4 top-4 inline-flex items-center gap-1.5 px-2 py-1 bg-zinc-950/70 backdrop-blur-sm border border-amber-500/40 font-mono text-[10px] uppercase tracking-[0.22em] text-amber-300">
+            <ExternalLink className="w-3 h-3" /> Sister tool
           </div>
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-24 h-24 bg-zinc-950 border-2 border-zinc-100 flex items-center justify-center">
-              <span className="font-display text-3xl font-black tracking-tighter">
-                ΔE
-              </span>
-            </div>
+          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between font-mono text-[11px] text-zinc-100 group-hover:text-amber-100 transition-colors">
+            <span className="font-bold tracking-wider">FORGESLICER.COM</span>
+            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
           </div>
-        </div>
-        <div className="text-center font-mono text-[10px] text-zinc-600 mt-4 uppercase tracking-[0.18em]">
-          Five filaments · Lab-space optimization
+        </a>
+        <div className="text-center font-mono text-[10px] text-zinc-600 mt-3 uppercase tracking-[0.18em]">
+          Where the colour-aware slicing happens
         </div>
       </div>
     </div>

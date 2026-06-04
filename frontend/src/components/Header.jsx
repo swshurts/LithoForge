@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Zap, Store, ExternalLink } from "lucide-react";
+import { Zap, Store } from "lucide-react";
 import { UserMenu } from "./UserMenu";
 import { QuotaCounter } from "./QuotaCounter";
 
@@ -39,9 +39,16 @@ export const Header = ({ onGenerate, canGenerate, generating }) => {
           target="_blank"
           rel="noopener noreferrer"
           data-testid="header-sister-tool-link"
-          className="hidden md:flex items-center gap-1.5 px-2.5 py-1 border border-zinc-800 hover:border-zinc-500 text-zinc-300 hover:text-zinc-100 font-mono text-[10px] uppercase tracking-[0.15em] transition-colors duration-150"
+          className="hidden md:flex items-center gap-1.5 pl-1 pr-2.5 py-1 border border-zinc-800 hover:border-amber-500/60 text-zinc-300 hover:text-zinc-100 font-mono text-[10px] uppercase tracking-[0.15em] transition-colors duration-150"
         >
-          <ExternalLink className="w-3 h-3" strokeWidth={1.5} />
+          <img
+            src="/forgeslicer-logo.webp"
+            alt=""
+            aria-hidden="true"
+            className="w-4 h-4 object-cover border border-zinc-800"
+            width={16}
+            height={16}
+          />
           Sister tool: ForgeSlicer.com&nbsp;→
         </a>
         <Link
