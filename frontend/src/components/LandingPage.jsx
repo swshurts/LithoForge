@@ -152,7 +152,7 @@ const Hero = () => (
         </div>
         <div className="font-mono text-[10px] text-zinc-500 flex items-center gap-1.5">
           <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-          5 free downloads · no card required to design
+          Unlimited downloads during beta · no card required to design
         </div>
       </div>
 

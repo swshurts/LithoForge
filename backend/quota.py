@@ -1,7 +1,8 @@
 """Per-user download quota + subscription tier tracking.
 
 Pricing (subject to change — Stripe not yet integrated):
-  • free      → 5 lifetime downloads (hard block on the 6th)
+  • free      → UNLIMITED downloads during beta (will become 5/lifetime
+                or 25/month once Stripe subscriptions go live)
   • hobbyist  → 25 downloads per calendar month
   • pro       → unlimited downloads, marketplace publishing, payouts
 
@@ -11,6 +12,11 @@ download_token from a paid marketplace purchase are NEVER counted —
 they paid for that. Re-downloads of the same (job_id, kind) by the same
 user are counted as a single use so users aren't punished for grabbing
 the file twice.
+
+The `users.downloads` counters still increment during beta — that gives
+us per-user usage analytics for when paywalls go live. Auth is still
+required for every creator-side export (anonymous guests get a 401 →
+sign-in modal) so we still capture every account.
 """
 
 from __future__ import annotations
@@ -22,7 +28,9 @@ from typing import Any, Dict, Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 TIER_LIMITS = {
-    "free": {"period": "lifetime", "limit": 5},
+    # Beta: unlimited for everyone signed in. When Stripe is wired we'll
+    # flip this back to `{"period": "lifetime", "limit": 5}`.
+    "free": {"period": "lifetime", "limit": None},
     "hobbyist": {"period": "monthly", "limit": 25},
     "pro": {"period": "monthly", "limit": None},  # None = unlimited
 }

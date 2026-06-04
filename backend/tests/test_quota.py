@@ -82,51 +82,36 @@ def _generate(client) -> str:
 
 
 class TestQuotaFreeTier:
+    """During beta the free tier has unlimited downloads. When Stripe
+    goes live and we flip the limit back to 5, restore the original
+    "first 5 succeed / 6th blocks" tests from git history."""
+
     def test_quota_endpoint_for_signed_in_free_user(self, free_client):
         r = free_client.get(f"{API}/me/quota")
         assert r.status_code == 200
         data = r.json()
         assert data["tier"] == "free"
-        assert data["limit"] == 5
+        # Beta: limit is None (unlimited) for free tier.
+        assert data["limit"] is None
         assert data["blocked"] is False
 
-    def test_first_5_downloads_succeed(self, free_client):
-        """Free tier allows 5 unique-job downloads. Multiple kinds for
-        the same job count as ONE use."""
-        job_ids = []
-        for _ in range(5):
+    def test_many_downloads_all_succeed_during_beta(self, free_client):
+        """Free tier must permit far more than 5 downloads in beta."""
+        for _ in range(8):
             job_id = _generate(free_client)
-            job_ids.append(job_id)
-            # Grab STL + 3MF + swaps — still counts as 1 use total
-            for kind in ("stl", "3mf", "swaps"):
-                r = free_client.get(f"{API}/export/{job_id}/{kind}")
-                assert r.status_code == 200, (
-                    f"{kind} on use {_ + 1 if False else len(job_ids)} failed: {r.text}"
-                )
+            r = free_client.get(f"{API}/export/{job_id}/stl")
+            assert r.status_code == 200, r.text
         st = free_client.get(f"{API}/me/quota").json()
-        assert st["used"] == 5
-        assert st["remaining"] == 0
-        assert st["blocked"] is True
-
-    def test_sixth_download_is_blocked(self, free_client):
-        """6th unique-job download must 402 with quota_exceeded payload."""
-        job_id = _generate(free_client)
-        r = free_client.get(f"{API}/export/{job_id}/stl")
-        assert r.status_code == 402, r.text
-        body = r.json()
-        assert body["detail"]["error"] == "quota_exceeded"
-        assert body["detail"]["tier"] == "free"
-        assert body["detail"]["limit"] == 5
+        assert st["used"] >= 8
+        # Unlimited remaining means `remaining` is None (not 0).
+        assert st["remaining"] is None
+        assert st["blocked"] is False
 
     def test_re_download_of_counted_job_still_allowed(self, free_client):
-        """Re-downloading a job already counted this period must NOT 402.
-        The 6th job created in the previous test was BLOCKED so it's
-        uncounted — we want any of the first 5 (counted) jobs, so we
-        pick the OLDEST in history."""
+        """Re-downloading a previously fetched job continues to be a no-op
+        on the counter (the idempotency shortcut still applies)."""
         jobs = free_client.get(f"{API}/my-jobs").json()
-        assert len(jobs) >= 5, "expected ≥5 jobs from earlier tests"
-        # /my-jobs returns most recent first; oldest is at the end and
-        # was definitely counted (it was the first generation).
+        assert len(jobs) >= 1, "expected ≥1 job from earlier tests"
         first_job_id = jobs[-1]["job_id"]
         r = free_client.get(f"{API}/export/{first_job_id}/stl")
         assert r.status_code == 200, r.text

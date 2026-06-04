@@ -24,7 +24,11 @@ export const QuotaCounter = ({ compact = false }) => {
   const Icon = badge.icon;
   const unlimited = quota.limit === null || quota.limit === undefined;
   const remaining = quota.remaining;
-  const showUpgradeCTA = tier === "free" || tier === "guest";
+  // Beta: every signed-in user has unlimited downloads, so the
+  // "Upgrade" CTA only makes sense for true guests (who'd be prompted
+  // to sign in). Once Stripe is wired and free=5 again, switch back to
+  // `tier === "free" || tier === "guest"`.
+  const showUpgradeCTA = tier === "guest";
 
   return (
     <div
@@ -39,10 +43,12 @@ export const QuotaCounter = ({ compact = false }) => {
       </span>
       {!compact && (
         <span className="text-zinc-500" data-testid="quota-text">
-          {unlimited ? (
+          {tier === "guest" ? (
+            <span className="text-zinc-400">Sign in to download</span>
+          ) : unlimited ? (
             <span className="inline-flex items-center gap-1">
               <Infinity className="w-3 h-3" />
-              Unlimited downloads
+              Unlimited during beta
             </span>
           ) : (
             <>
@@ -69,7 +75,7 @@ export const QuotaCounter = ({ compact = false }) => {
           data-testid="quota-upgrade-btn"
           className="ml-1 px-2 py-1 bg-zinc-100 text-zinc-950 uppercase tracking-[0.16em] font-bold hover:bg-white transition-colors"
         >
-          Upgrade
+          Sign in
         </button>
       )}
       {showUpgradeCTA && compact && (

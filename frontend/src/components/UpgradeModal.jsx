@@ -67,12 +67,12 @@ export const UpgradeModal = ({ open, onClose, quota }) => {
             <h2 className="font-display text-3xl font-black tracking-tight leading-tight">
               {isAnon
                 ? "Sign in to download"
-                : "You've used all 5 free downloads"}
+                : "Subscriptions launch soon"}
             </h2>
             <p className="font-mono text-[11px] text-zinc-500 mt-2 max-w-xl leading-relaxed">
               {isAnon
-                ? "Designing is free for everyone. Downloads require a free account so we can track your 5 starter downloads — and so paid plans can scale up."
-                : `You've downloaded ${quota?.used ?? 5} files on the free plan. Pick a plan below to keep printing.`}
+                ? "Designing is free for everyone. Downloads require a free account during beta — you get unlimited downloads while we wire up subscriptions."
+                : `Downloads are unlimited during beta. Paid plans go live once Stripe is wired — drop your email below and we'll send you an early-bird discount when they launch.`}
             </p>
           </div>
           <button
@@ -91,7 +91,7 @@ export const UpgradeModal = ({ open, onClose, quota }) => {
             className="w-full flex items-center justify-center gap-2 bg-zinc-100 text-zinc-950 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.18em] hover:bg-white transition-colors"
           >
             <LogIn className="w-3.5 h-3.5" />
-            Sign in (free — gives you 5 starter downloads)
+            Sign in (free — unlimited downloads during beta)
           </button>
         )}
 

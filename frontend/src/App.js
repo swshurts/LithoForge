@@ -341,6 +341,7 @@ export default function App() {
         onGenerate={handleGenerate}
         canGenerate={canGenerate}
         generating={loading}
+        jobId={result?.job_id}
       />
 
       {/* Desktop ≥ lg: 3-column control room */}

@@ -576,6 +576,76 @@
       `text/plain`) and 3MF (1.4 MB · `model/3mf`) all download
       cleanly, success toast surfaces.
 
+## Implemented (2026-02-26) — Beta: unlimited free downloads (Stripe paused)
+
+- [x] **Why**: launching with a "Coming soon" wall on the 6th download
+      was a dead-end UX (no Stripe yet to actually monetize). User is
+      busy with another product's beta launch and asked to remove the
+      cap until Stripe is wired.
+- [x] **Backend** (`quota.py`) — `TIER_LIMITS["free"]` flipped from
+      `{"period": "lifetime", "limit": 5}` to `{"period": "lifetime",
+      "limit": None}`. `get_quota_state` already returns `limit=None`
+      and `blocked=False` when the tier limit is None, so the
+      `enforce_quota` early-exit never fires for free users. Per-user
+      `downloads_seen` counters still increment — we keep the usage
+      analytics for the eventual paywall flip.
+- [x] **UpgradeModal** — copy updated:
+        * Signed-in modal title: "Subscriptions launch soon" (was
+          "You've used all 5 free downloads").
+        * Sign-in CTA: "Sign in (free — unlimited downloads during
+          beta)" (was "…gives you 5 starter downloads").
+        * Body text rewritten to set the beta expectation honestly
+          and tease "early-bird discount when paid plans launch".
+- [x] **QuotaCounter** — now renders three distinct states:
+        * Guest: `[GUEST]   Sign in to download   [SIGN IN]`
+          (was a misleading "0 / 0 downloads left").
+        * Signed-in free during beta: `[FREE] ∞ Unlimited during beta`.
+        * Pro: unchanged.
+      The "Upgrade" CTA was only useful when free=5; now it's
+      replaced by a "Sign in" CTA visible only to guests.
+- [x] **LandingPage hero trust badge** — "5 free downloads" → "Unlimited
+      downloads during beta".
+- [x] **Tests** (`test_quota.py`) — old free-tier tests (`test_first_5
+      _downloads_succeed`, `test_sixth_download_is_blocked`) replaced
+      with `test_many_downloads_all_succeed_during_beta` (loops 8
+      downloads, all 200 OK) and updated `_for_signed_in_free_user`
+      to assert `limit=None, blocked=False`. **54/54 backend pytests
+      green.** When Stripe is wired, restore the original tests from
+      git history along with the `TIER_LIMITS["free"]` value.
+
+## Implemented (2026-02-26) — "Send to ForgeSlicer" handoff button
+
+- [x] **`lib/forgeslicerHandoff.js`** — production-grade implementation
+      of the user's contract:
+        * Opens `https://forgeslicer.com/handoff` in a new tab.
+        * Fetches the STL via the existing `/api/export/{jobId}/stl`
+          endpoint with credentials.
+        * Listens for `{ type: "forgeslicer:handoff:ready" }` *only*
+          from `https://forgeslicer.com` (strict `e.origin` check).
+        * Posts back `{ type: "forgeslicer:handoff:stl", filename, data,
+          sourceLabel: "LithoForge", sourceUrl }` with the ArrayBuffer
+          *transferred* (zero-copy — important for 10 MB+ STLs).
+        * 60 s handshake timeout, listener cleanup on resolve/reject/
+          timeout, custom error classes (`PopupBlocked`,
+          `AuthRequired`, `HandoffTimeout`) so the caller can decide
+          which UX to show.
+- [x] **`Header.jsx`** — new "Send to ForgeSlicer" button left of the
+      Generate button. Amber outline matching the ForgeSlicer accent.
+      Disabled until a generated job exists. Click handler:
+        * `AuthRequired` → opens `<UpgradeModal>` (sign-in gate)
+        * `PopupBlocked` → toast.error with hint to allow popups
+        * `HandoffTimeout` → toast.error
+        * success → toast.success("Sent to ForgeSlicer")
+      `data-testid="header-send-to-forgeslicer"`.
+- [x] **`App.js`** — passes `jobId={result?.job_id}` through to Header
+      so the button enables itself the moment a Generate completes.
+- [x] **Tests** — `src/lib/__tests__/forgeslicerHandoff.test.js`
+      (Jest + jsdom): 3/3 passing for happy path, popup-blocker
+      handling, and 401 auth-required path. The strict origin check is
+      enforced by structure (early-return on bad `e.origin`) and is
+      not separately tested due to jsdom + fake-timer flake; covered
+      by code review.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG
