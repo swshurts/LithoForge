@@ -824,6 +824,27 @@ indexing if your slicer pipeline needs it.
       `forgeslicer:handoff:stl` (the contract ForgeSlicer's current build
       understands). 4/4 Jest tests passing.
 
+## Implemented (2026-02-27) — Auth hardening: clear stale session cookie on 401
+- [x] **Root cause of "can't sign in on regular Chrome" recurrence**: when a
+      browser holds a `session_token` cookie whose row was removed server-side
+      (expiry sweep, DB reset, logged out elsewhere), `/api/auth/me` returned
+      401 but did NOT instruct the browser to drop the cookie. The browser
+      kept re-sending the dead token forever — user stuck in "looks signed
+      out, can't sign in because the dead cookie still leaks through"
+      purgatory. Incognito worked because it starts with no cookies.
+- [x] **Fix (`backend/auth.py`)**: `/auth/me` now returns a `JSONResponse`
+      (not `raise HTTPException`) with `delete_cookie(session_token, …)`
+      attached whenever the request carried a token that didn't resolve to
+      an active session. Cookie attrs (`path="/"`, `samesite="none"`,
+      `secure=True`) match the original `set_cookie` so browsers honour the
+      deletion. (Note: `raise HTTPException` discards any cookies set on the
+      injected `Response`, which is why we switched to returning JSONResponse
+      directly.)
+- [x] **Verified live** via curl against the preview deployment.
+- [x] **New backend tests** (`tests/test_auth.py`, 4 tests): valid 200 + no
+      clearing; no token 401 + no clearing; stale Bearer → 401 + cleared;
+      stale Cookie → 401 + cleared. Total backend suite: **62/62 passing**.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG
