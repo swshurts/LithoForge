@@ -13,7 +13,6 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Cookie, Header, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel
 
@@ -161,33 +160,20 @@ def _build_auth_router(db: AsyncIOMotorDatabase) -> APIRouter:
         session_token: Optional[str] = Cookie(default=None),
         authorization: Optional[str] = Header(default=None),
     ):
-        # If we were given a token but it doesn't resolve to a live
-        # session, the browser is holding a dead cookie (server-side
-        # expiry sweep deleted the row, DB was reset, manual logout
-        # elsewhere, etc.). Without this, the browser keeps re-sending
-        # that dead token forever, every /auth/me returns 401, and the
-        # user is stuck in a "looks signed out but can't sign in
-        # because the cookie still leaks through" state. Clearing the
-        # cookie on 401 lets the next sign-in start clean.
-        #
-        # Note: we return JSONResponse directly (not `raise
-        # HTTPException`) because FastAPI builds a fresh response
-        # object when an exception is raised, discarding any cookies
-        # set on the injected `Response` dependency.
-        token_sent = bool(session_token) or bool(
-            authorization and authorization.lower().startswith("bearer ")
-        )
+        # Note on stale cookies: we INTENTIONALLY do not call
+        # delete_cookie here when a token doesn't resolve to a live
+        # session. Doing so creates a race during sign-in: between the
+        # /auth/session POST setting the new cookie and the React UI
+        # settling, a StrictMode-doubled /auth/me with the in-flight
+        # cookie can hit a momentary mismatch, get 401'd, and the
+        # delete_cookie would wipe the freshly-set valid session,
+        # causing an infinite sign-in loop. Stale cookies are instead
+        # overwritten on the next successful /auth/session because
+        # `set_cookie` with the same (name, host, path) replaces the
+        # previous value atomically.
         user = await get_current_user(session_token, authorization)
         if not user:
-            unauthorized = JSONResponse(
-                status_code=401,
-                content={"detail": "Not authenticated"},
-            )
-            if token_sent:
-                unauthorized.delete_cookie(
-                    COOKIE_NAME, path="/", samesite="none", secure=True
-                )
-            return unauthorized
+            raise HTTPException(status_code=401, detail="Not authenticated")
         return user
 
     @router.post("/logout")

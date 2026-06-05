@@ -118,15 +118,20 @@ export const AuthCallbackHandler = ({ onComplete }) => {
           { session_id: sessionId },
           { withCredentials: true, timeout: 10000 }
         );
+        // Strip the fragment FIRST — before refresh() — so that any
+        // re-render triggered by AuthProvider state updates can never
+        // see the session_id hash and accidentally re-fire this
+        // callback under StrictMode double-invoke. The browser has
+        // already committed the Set-Cookie from the response above,
+        // so the upcoming refresh() will carry the new cookie.
+        const cleanUrl = window.location.pathname + window.location.search;
+        window.history.replaceState({}, document.title, cleanUrl);
         // Pull the just-set cookie into the AuthProvider so the UI
         // updates without a page reload.
         await refresh();
       } catch {
         /* fall through — user will see anonymous state */
       } finally {
-        // Strip the fragment so the URL stays clean and reloads work.
-        const cleanUrl = window.location.pathname + window.location.search;
-        window.history.replaceState({}, document.title, cleanUrl);
         setProcessing(false);
         if (onComplete) onComplete();
       }

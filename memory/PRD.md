@@ -824,26 +824,33 @@ indexing if your slicer pipeline needs it.
       `forgeslicer:handoff:stl` (the contract ForgeSlicer's current build
       understands). 4/4 Jest tests passing.
 
-## Implemented (2026-02-27) — Auth hardening: clear stale session cookie on 401
-- [x] **Root cause of "can't sign in on regular Chrome" recurrence**: when a
-      browser holds a `session_token` cookie whose row was removed server-side
-      (expiry sweep, DB reset, logged out elsewhere), `/api/auth/me` returned
-      401 but did NOT instruct the browser to drop the cookie. The browser
-      kept re-sending the dead token forever — user stuck in "looks signed
-      out, can't sign in because the dead cookie still leaks through"
-      purgatory. Incognito worked because it starts with no cookies.
-- [x] **Fix (`backend/auth.py`)**: `/auth/me` now returns a `JSONResponse`
-      (not `raise HTTPException`) with `delete_cookie(session_token, …)`
-      attached whenever the request carried a token that didn't resolve to
-      an active session. Cookie attrs (`path="/"`, `samesite="none"`,
-      `secure=True`) match the original `set_cookie` so browsers honour the
-      deletion. (Note: `raise HTTPException` discards any cookies set on the
-      injected `Response`, which is why we switched to returning JSONResponse
-      directly.)
-- [x] **Verified live** via curl against the preview deployment.
-- [x] **New backend tests** (`tests/test_auth.py`, 4 tests): valid 200 + no
-      clearing; no token 401 + no clearing; stale Bearer → 401 + cleared;
-      stale Cookie → 401 + cleared. Total backend suite: **62/62 passing**.
+## Implemented (2026-02-27) — Auth: rollback aggressive cookie-clear + fix sign-in loop
+- [x] **Root cause of sign-in loop**: the earlier "auto-clear stale cookie on
+      /auth/me 401" hardening raced with React.StrictMode's double-effect-invoke
+      during sign-in. Sequence that caused the loop:
+      1. POST /auth/session → 200, fresh cookie set.
+      2. AuthCallback's refresh() → /auth/me → 200 ✓ (user resolved).
+      3. StrictMode (dev) or any concurrent re-render fires a second /auth/me
+         while the browser/server are mid-flight — token-doesn't-resolve path
+         hit → 401 + `delete_cookie` zapped the freshly-set valid cookie.
+      4. UI flips to signed-out → user clicks Sign in → cookie clean again →
+         loop repeats indefinitely.
+- [x] **Fix 1 (`backend/auth.py`)**: `/auth/me` no longer calls
+      `delete_cookie` on 401. It just returns a plain HTTPException(401). Stale
+      cookies are overwritten atomically on the next successful /auth/session
+      (same name, host, path → browser replaces the value). Comment in the
+      file explains why we deliberately do NOT clear cookies here.
+- [x] **Fix 2 (`frontend/src/lib/auth.js`)**: `AuthCallbackHandler` now strips
+      the `#session_id=…` hash BEFORE awaiting `refresh()`, not in the
+      `finally`. This eliminates one race-amplification window where a
+      Strict-Mode re-invocation could observe the hash again and re-fire the
+      session exchange with a now-spent session_id.
+- [x] **Tests rewritten** (`tests/test_auth.py`, 5 tests): valid 200, no-token
+      401, stale Bearer 401, stale Cookie 401, plus an explicit **regression
+      test** that asserts a 401 response does NOT carry a `Set-Cookie:
+      session_token=…` header. Full backend suite: **63/63 passing**.
+- [x] **Live-verified** via curl that 401 responses only carry Cloudflare's
+      own `__cf_bm` cookie — never a `session_token` clear directive.
 
 ## Backlog
 ### P1
