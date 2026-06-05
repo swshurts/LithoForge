@@ -13,7 +13,7 @@ import {
 } from "../lib/forgeslicerHandoff";
 import { useQuota } from "../lib/quota";
 
-export const Header = ({ onGenerate, canGenerate, generating, jobId }) => {
+export const Header = ({ onGenerate, canGenerate, generating, jobId, baseMinLayers }) => {
   const [sending, setSending] = useState(false);
   const { showUpgrade } = useQuota();
 
@@ -26,7 +26,7 @@ export const Header = ({ onGenerate, canGenerate, generating, jobId }) => {
         // ForgeSlicer needs to recover the full colour palette. STL would
         // strip that down to a single colourless mesh, so this endpoint
         // is the correct handoff format.
-        modelUrl: exportUrl(jobId, "3mf"),
+        modelUrl: exportUrl(jobId, "3mf", { baseMinLayers }),
         filename: `lithoforge-${jobId.slice(0, 8)}.3mf`,
         sourceUrl: `${window.location.origin}/studio?job=${jobId}`,
       });

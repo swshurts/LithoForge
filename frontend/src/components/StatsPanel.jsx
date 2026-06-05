@@ -177,6 +177,7 @@ export const StatsPanel = ({
   setVibrancy,
   onPaletteSizeChange,
   onRestoreJob,
+  baseMinLayers,
 }) => {
   const q = result ? quality(result.delta_e_mean) : null;
 
@@ -356,7 +357,7 @@ export const StatsPanel = ({
         </div>
         <div className="space-y-2">
           <DownloadButton
-            url={result ? exportUrl(result.job_id, "stl") : null}
+            url={result ? exportUrl(result.job_id, "stl", { baseMinLayers }) : null}
             filename={result ? `lithophane_${result.job_id}.stl` : "lithophane.stl"}
             icon={FileBox}
             label="STL mesh"
@@ -364,7 +365,7 @@ export const StatsPanel = ({
             testid="download-stl"
           />
           <DownloadButton
-            url={result ? exportUrl(result.job_id, "swaps") : null}
+            url={result ? exportUrl(result.job_id, "swaps", { baseMinLayers }) : null}
             filename={result ? `lithophane_${result.job_id}_swaps.txt` : "lithophane_swaps.txt"}
             icon={FileText}
             label="Swap instructions"
@@ -372,11 +373,11 @@ export const StatsPanel = ({
             testid="download-swaps"
           />
           <DownloadButton
-            url={result ? exportUrl(result.job_id, "3mf") : null}
+            url={result ? exportUrl(result.job_id, "3mf", { baseMinLayers }) : null}
             filename={result ? `lithophane_${result.job_id}.3mf` : "lithophane.3mf"}
             icon={Layers}
             label="3MF bundle"
-            sub="Mesh + auto-pause at swap layers"
+            sub={`Mesh + auto-pause · ${baseMinLayers ?? 2}-layer base fill`}
             testid="download-3mf"
           />
         </div>

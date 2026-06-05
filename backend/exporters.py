@@ -44,8 +44,16 @@ def _build_vertices(
     layer_map: np.ndarray,
     layer_height_mm: float,
     geo: GeometrySpec,
+    base_min_layers: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Return (top_vertices, bottom_vertices) shaped (H, W, 3)."""
+    """Return (top_vertices, bottom_vertices) shaped (H, W, 3).
+
+    `base_min_layers` enforces a minimum solid floor under every pixel
+    so the heightmap never has zero-thickness holes (which the slicer
+    treats as voids — undesirable for lithophanes that are meant to be
+    continuous prints). Default 1 = original behaviour; 2..5 thickens
+    the void-fill base.
+    """
     h, w = layer_map.shape
     usable_w = geo.width_mm - 2 * geo.border_mm
     usable_h = geo.height_mm - 2 * geo.border_mm
@@ -53,8 +61,10 @@ def _build_vertices(
     xs = np.linspace(geo.border_mm, geo.border_mm + usable_w, w)
     ys = np.linspace(geo.border_mm, geo.border_mm + usable_h, h)
 
-    # min thickness = 1 layer so the print is continuous.
-    z_top = (np.maximum(layer_map, 1) * layer_height_mm).astype(np.float64)
+    # Enforce a minimum floor of `base_min_layers` so the print stays
+    # continuous — slicers otherwise treat zero-height pixels as voids.
+    floor = max(1, int(base_min_layers))
+    z_top = (np.maximum(layer_map, floor) * layer_height_mm).astype(np.float64)
 
     if geo.mode in ("flat", "disc"):
         X, Y = np.meshgrid(xs, ys)
@@ -113,9 +123,10 @@ def _build_mesh(
     layer_map: np.ndarray,
     layer_height_mm: float,
     geo: GeometrySpec,
+    base_min_layers: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Return vertices (N, 3) and faces (M, 3) as int32 indices."""
-    top, bottom = _build_vertices(layer_map, layer_height_mm, geo)
+    top, bottom = _build_vertices(layer_map, layer_height_mm, geo, base_min_layers)
     h, w, _ = top.shape
 
     verts_top = top.reshape(-1, 3)
@@ -391,6 +402,7 @@ def build_per_filament_slabs(
     n_filaments: int,
     layer_height_mm: float,
     geo: GeometrySpec,
+    base_min_layers: int = 1,
 ) -> List[Tuple[int, np.ndarray, np.ndarray]]:
     """Return [(filament_idx, vertices, faces), ...] — one tuple per
     filament that actually contributes geometry. Filament order matches
@@ -400,6 +412,12 @@ def build_per_filament_slabs(
       bottoms[k] = (cumulative layer index where filament k begins)
       tops   [k] = (next swap layer index OR layer_map.max()+1 for last)
       clipped[r,c] = max(0, min(layer_map[r,c], tops[k]) - bottoms[k])
+
+    `base_min_layers` (>= 1) forces the BASE filament (slot 0) to fill
+    every in-domain pixel with at least that many layers, so the 3MF
+    has no zero-thickness voids. Voids are still possible in disc mode
+    *outside* the inscribed circle (those pixels are intentionally
+    excluded by the geometry mask).
     """
     if n_filaments <= 0:
         return []
@@ -414,12 +432,19 @@ def build_per_filament_slabs(
     bottoms = bottoms[:n_filaments]
     tops = tops[:n_filaments]
 
+    # Bump the working layer map so the BASE slab's clip math fills
+    # voids with `base_min_layers`. We deliberately only bump the floor
+    # — pixels with layer_map > floor keep their original allocation.
+    floor = max(1, int(base_min_layers))
+    base_layer_map = np.maximum(layer_map, floor)
+
     slabs: List[Tuple[int, np.ndarray, np.ndarray]] = []
     for k in range(n_filaments):
         if tops[k] <= bottoms[k]:
             continue
+        source = base_layer_map if k == 0 else layer_map
         clipped = np.clip(
-            layer_map - bottoms[k], 0, tops[k] - bottoms[k]
+            source - bottoms[k], 0, tops[k] - bottoms[k]
         ).astype(np.int32)
         if int((clipped > 0).sum()) == 0:
             continue
@@ -854,9 +879,13 @@ def build_export(
     swap_colors: List[str],
     printer_id: str = "generic_orca",
     license_text: str = "",
+    base_min_layers: int = 2,
 ) -> dict:
     profile = get_profile(printer_id)
-    vertices, faces = _build_mesh(layer_map, layer_height_mm, geo)
+    # Clamp to the UI's exposed range so a stray API caller can't blow
+    # up the heightmap or starve the print of base filament.
+    base_min_layers = max(1, min(5, int(base_min_layers)))
+    vertices, faces = _build_mesh(layer_map, layer_height_mm, geo, base_min_layers)
     stl_bytes = write_stl_binary(vertices, faces)
     swap_txt = build_swap_instructions(
         swap_heights_mm, swap_colors, filament_names, layer_height_mm, profile
@@ -875,6 +904,7 @@ def build_export(
         len(filaments),
         layer_height_mm,
         geo,
+        base_min_layers=base_min_layers,
     )
     threemf = write_3mf(
         vertices, faces, filaments, swap_heights_mm, layer_height_mm,
@@ -889,4 +919,5 @@ def build_export(
         "vertex_count": int(vertices.shape[0]),
         "printer_id": profile["id"],
         "supported_formats": profile["supported_formats"],
+        "base_min_layers": base_min_layers,
     }

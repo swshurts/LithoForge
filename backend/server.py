@@ -394,7 +394,11 @@ async def get_job(job_id: str) -> Dict[str, Any]:
     }
 
 
-def _build_export(job_id: str, printer_override: Optional[str] = None) -> Dict[str, Any]:
+def _build_export(
+    job_id: str,
+    printer_override: Optional[str] = None,
+    base_min_layers: int = 2,
+) -> Dict[str, Any]:
     job = JOBS.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
@@ -417,6 +421,7 @@ def _build_export(job_id: str, printer_override: Optional[str] = None) -> Dict[s
         swap_colors=job["swap_colors"],
         printer_id=printer_id,
         license_text=req.get("license", "") or "",
+        base_min_layers=base_min_layers,
     )
     return export
 
@@ -487,13 +492,14 @@ async def export_stl(
     current_user=Depends(get_current_user_dep),
     token: Optional[str] = None,
     printer: Optional[str] = None,
+    base_layers: int = 2,
 ) -> Response:
     if token:
         # Buyer flow — token grants access, no quota cost.
         await _ensure_job_for_paid_buyer(job_id, token)
     else:
         await _gate_creator_download(job_id, "stl", current_user)
-    export = _build_export(job_id, printer_override=printer)
+    export = _build_export(job_id, printer_override=printer, base_min_layers=base_layers)
     return Response(
         content=export["stl"],
         media_type="model/stl",
@@ -507,12 +513,13 @@ async def export_swaps(
     current_user=Depends(get_current_user_dep),
     token: Optional[str] = None,
     printer: Optional[str] = None,
+    base_layers: int = 2,
 ) -> Response:
     if token:
         await _ensure_job_for_paid_buyer(job_id, token)
     else:
         await _gate_creator_download(job_id, "swaps", current_user)
-    export = _build_export(job_id, printer_override=printer)
+    export = _build_export(job_id, printer_override=printer, base_min_layers=base_layers)
     return Response(
         content=export["swap_txt"],
         media_type="text/plain",
@@ -526,12 +533,13 @@ async def export_3mf(
     current_user=Depends(get_current_user_dep),
     token: Optional[str] = None,
     printer: Optional[str] = None,
+    base_layers: int = 2,
 ) -> Response:
     if token:
         await _ensure_job_for_paid_buyer(job_id, token)
     else:
         await _gate_creator_download(job_id, "3mf", current_user)
-    export = _build_export(job_id, printer_override=printer)
+    export = _build_export(job_id, printer_override=printer, base_min_layers=base_layers)
     return Response(
         content=export["threemf"],
         media_type="model/3mf",

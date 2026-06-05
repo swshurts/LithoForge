@@ -293,6 +293,23 @@ export const ConfigPanel = ({
             />
           </Row>
 
+          <Row
+            label="Base fill"
+            value={config.base_min_layers ?? 2}
+            unit="layer"
+            testid="row-base-min-layers"
+          >
+            <Slider
+              data-testid="base-min-layers-slider"
+              value={[config.base_min_layers ?? 2]}
+              onValueChange={([v]) => update("base_min_layers", Math.round(v))}
+              min={1}
+              max={5}
+              step={1}
+              disabled={disabled}
+            />
+          </Row>
+
           {config.geometry !== "flat" && config.geometry !== "disc" && (
             <Row
               label="Curve radius"

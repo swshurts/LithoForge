@@ -99,7 +99,13 @@ export const matchPalette = async (filaments, { scope = "mine", algo = "de2000" 
   return data;
 };
 
-export const exportUrl = (jobId, kind) => `${API}/export/${jobId}/${kind}`;
+export const exportUrl = (jobId, kind, { baseMinLayers } = {}) => {
+  let url = `${API}/export/${jobId}/${kind}`;
+  if (baseMinLayers != null) {
+    url += `?base_layers=${baseMinLayers}`;
+  }
+  return url;
+};
 
 // --- Cloud presets (authenticated) ----------------------------------
 export const listCloudPresets = async () => {

@@ -852,6 +852,44 @@ indexing if your slicer pipeline needs it.
 - [x] **Live-verified** via curl that 401 responses only carry Cloudflare's
       own `__cf_bm` cookie — never a `session_token` clear directive.
 
+## Implemented (2026-02-27) — Base-fill option eliminates 3MF voids
+- [x] **Bug**: 3MF exports had zero-thickness pixels where the input photo's
+      heightmap resolved to layer 0 — slicers treat those as printable voids,
+      breaking the print. STL already had a hard-coded 1-layer floor; the
+      per-filament 3MF slabs did not, so the base slab simply skipped void
+      pixels and ForgeSlicer / Orca / Bambu would slice them as holes.
+- [x] **Fix (`backend/exporters.py`)**:
+      - `_build_vertices` / `_build_mesh` take a `base_min_layers` (1..5,
+        default 2) that drives `np.maximum(layer_map, base_min_layers)` —
+        replaces the old hard-coded floor of 1.
+      - `build_per_filament_slabs` takes the same arg; for the BASE slab
+        (slot 0) the working layer map is bumped to the floor before
+        clipping, so voids fill with base filament. Non-void pixels are
+        untouched (they keep their original allocation).
+      - `build_export` clamps to [1, 5] and propagates everywhere.
+- [x] **API (`backend/server.py`)**: every export endpoint
+      (`/api/export/{id}/stl|swaps|3mf`) accepts a `?base_layers=N` query
+      param (1..5, default 2). Bad values are rejected with 422 (FastAPI
+      auto-validates int).
+- [x] **Frontend**:
+      - `App.js`: added `base_min_layers: 2` to DEFAULT_CONFIG.
+      - `ConfigPanel.jsx`: new "Base fill" slider 1..5 step 1, sits right
+        below "Border" in Geometry (it's a print-physics value, not a
+        download-time tweak).
+      - `lib/api.js`: `exportUrl(jobId, kind, { baseMinLayers })` appends
+        the query param when supplied.
+      - `StatsPanel.jsx`: passes config value through to all three download
+        buttons; 3MF subtitle now reads e.g. "Mesh + auto-pause · 2-layer
+        base fill" so users see what they're exporting.
+      - `Header.jsx`: "Send to ForgeSlicer" handoff URL also carries the
+        param so the 3MF that lands in ForgeSlicer matches what the
+        download button would produce.
+- [x] **Tests**: 3 new pytests in `tests/test_color_3mf.py` covering:
+      void-pixel filled to ≥1 layer of base, non-void pixels NOT inflated,
+      out-of-range clamp to [1, 5]. Full backend suite: **66/66 passing**
+      (was 63). Live curl confirms 422 on bad input, 404 on valid input
+      with no job.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

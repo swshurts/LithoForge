@@ -33,6 +33,10 @@ const DEFAULT_CONFIG = {
   relief: 0.5,
   smoothing: 0,
   printer_id: "generic_orca",
+  // Minimum base-filament floor (layers) — fills any zero-thickness
+  // voids in the heightmap so the 3MF has no holes. Range 1..5; the
+  // backend defaults to 2 if the query param is omitted.
+  base_min_layers: 2,
 };
 
 export default function App() {
@@ -332,6 +336,7 @@ export default function App() {
       setVibrancy={setVibrancy}
       onPaletteSizeChange={handlePaletteSizeChange}
       onRestoreJob={handleRestoreJob}
+      baseMinLayers={config.base_min_layers}
     />
   );
 
@@ -342,6 +347,7 @@ export default function App() {
         canGenerate={canGenerate}
         generating={loading}
         jobId={result?.job_id}
+        baseMinLayers={config.base_min_layers}
       />
 
       {/* Desktop ≥ lg: 3-column control room */}

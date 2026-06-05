@@ -137,3 +137,87 @@ def test_write_3mf_falls_back_to_single_mesh_without_slabs():
     assert len(re.findall(r"<object\\b", model)) <= 1 \
         or re.findall(r"<object id=\"1\"", model)
     assert "Metadata/model_settings.config" not in entries
+
+
+def test_base_min_layers_fills_voids_in_base_slab():
+    """A layer map with explicit zero-thickness pixels should produce
+    a BASE slab whose footprint covers every pixel — not just the
+    non-zero ones — when base_min_layers >= 1. This is the bug fix
+    that eliminates 3MF voids in published lithophanes."""
+    h, w = 8, 8
+    layer_map = np.full((h, w), 6.0)
+    # Punch a 3x3 hole of zero-thickness pixels (these are the voids
+    # users were seeing in their 3MF).
+    layer_map[2:5, 2:5] = 0.0
+
+    geo = GeometrySpec(mode="flat", width_mm=40, height_mm=40)
+
+    # base_min_layers=1 → BASE slab must cover the void.
+    slabs = build_per_filament_slabs(
+        layer_map, swap_layer_indices=[3], n_filaments=2,
+        layer_height_mm=0.16, geo=geo,
+        base_min_layers=1,
+    )
+    base_slot, base_verts, base_faces = slabs[0]
+    assert base_slot == 0
+    # The base slab's top z over the void region must be > 0 — i.e.
+    # the slab DID NOT skip those pixels (1 layer × 0.16mm).
+    z_top = base_verts[: base_verts.shape[0] // 2, 2]
+    assert z_top.min() > 0, "base slab still has a void at floor=0"
+
+    # base_min_layers=3 → top of void region should rise to 3 layers.
+    slabs3 = build_per_filament_slabs(
+        layer_map, swap_layer_indices=[3], n_filaments=2,
+        layer_height_mm=0.16, geo=geo,
+        base_min_layers=3,
+    )
+    base3_verts = slabs3[0][1]
+    z_top3 = base3_verts[: base3_verts.shape[0] // 2, 2]
+    # Every base-slab top must be >= 3 layers high (modulo float).
+    assert float(z_top3.min()) >= 3 * 0.16 - 1e-6
+
+
+def test_base_min_layers_does_not_inflate_nonzero_pixels():
+    """Pixels that already had >= base_min_layers of base must NOT be
+    bumped up — only the voids."""
+    h, w = 6, 6
+    layer_map = np.full((h, w), 5.0)  # everywhere taller than 2
+    layer_map[1, 1] = 0.0  # one void
+
+    geo = GeometrySpec(mode="flat", width_mm=30, height_mm=30)
+    slabs = build_per_filament_slabs(
+        layer_map, swap_layer_indices=[3], n_filaments=2,
+        layer_height_mm=0.16, geo=geo,
+        base_min_layers=2,
+    )
+    base_verts = slabs[0][1]
+    n_top = base_verts.shape[0] // 2
+    z_top = base_verts[:n_top, 2].reshape(h, w)
+    # Void pixel got bumped to exactly 2 layers.
+    assert z_top[1, 1] == pytest.approx(2 * 0.16, abs=1e-6)
+    # Non-void pixel kept its original 3-layer cap (top of base slab
+    # is min(layer_map, tops[0]=3) = 3).
+    assert z_top[0, 0] == pytest.approx(3 * 0.16, abs=1e-6)
+
+
+def test_build_export_clamps_base_min_layers_to_1_5():
+    """Out-of-range base_min_layers values must be clamped, never
+    crash the export."""
+    layer_map = np.full((6, 6), 4.0)
+    geo = GeometrySpec(mode="flat", width_mm=30, height_mm=30)
+    out_lo = build_export(
+        layer_map, layer_height_mm=0.16, geo=geo,
+        filament_names=["A", "B"],
+        swap_heights_mm=[0.0, 2 * 0.16],
+        swap_colors=["#FFFFFF", "#000000"],
+        base_min_layers=-3,
+    )
+    out_hi = build_export(
+        layer_map, layer_height_mm=0.16, geo=geo,
+        filament_names=["A", "B"],
+        swap_heights_mm=[0.0, 2 * 0.16],
+        swap_colors=["#FFFFFF", "#000000"],
+        base_min_layers=99,
+    )
+    assert out_lo["base_min_layers"] == 1
+    assert out_hi["base_min_layers"] == 5
