@@ -94,4 +94,30 @@ describe("sendToForgeSlicer", () => {
     ).rejects.toBeInstanceOf(AuthRequired);
     expect(fakePopup.close).toHaveBeenCalled();
   });
+
+  it("warns (instead of silently dropping) when ForgeSlicer pings from the wrong origin", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    // Don't await — we just want to attach the listener then poke it.
+    sendToForgeSlicer({
+      modelUrl: "/x",
+      filename: "x.3mf",
+      sourceUrl: "/",
+    }).catch(() => {}); // swallow eventual timeout in this short-lived test
+
+    await new Promise((r) => setTimeout(r, 5));
+
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: { type: "forgeslicer:handoff:ready" },
+        origin: "https://www.forgeslicer.com", // <- wrong (apex vs www)
+      }),
+    );
+
+    // Wrong-origin forgeslicer:* messages must be logged so users can
+    // diagnose a stuck handoff.
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("non-allowlisted origin https://www.forgeslicer.com"),
+    );
+    expect(fakePopup.postMessage).not.toHaveBeenCalled();
+  });
 });

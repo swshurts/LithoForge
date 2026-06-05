@@ -30,10 +30,23 @@
  * Origin guard: we ONLY accept `ready` from `FORGESLICER_ORIGIN` and we
  * ONLY post to that same origin. The ArrayBuffer is transferred (zero-
  * copy) so neither side keeps a duplicate of the model bytes.
+ *
+ * Diagnostics: if a `ready` ping arrives from an unexpected origin we
+ * `console.warn` instead of silently dropping it — this is the only
+ * way to tell, in the field, whether a stuck handoff is "ForgeSlicer
+ * never pinged us" vs "our allowlist is wrong". Symmetric warnings on
+ * the ForgeSlicer side make non-allowlisted LithoForge origins obvious
+ * when diagnosing across the two tabs.
  */
 
-const FORGESLICER_ORIGIN = "https://forgeslicer.com";
-const FORGESLICER_HANDOFF_URL = `${FORGESLICER_ORIGIN}/handoff`;
+// Allow overriding the ForgeSlicer origin / handoff URL via env vars so
+// we can point at a staging ForgeSlicer build (or a local dev one)
+// without rebuilding. Falls back to production.
+const FORGESLICER_ORIGIN =
+  process.env.REACT_APP_FORGESLICER_ORIGIN || "https://forgeslicer.com";
+const FORGESLICER_HANDOFF_URL =
+  process.env.REACT_APP_FORGESLICER_HANDOFF_URL ||
+  `${FORGESLICER_ORIGIN}/handoff`;
 
 export class PopupBlocked extends Error {}
 export class AuthRequired extends Error {}
@@ -85,6 +98,14 @@ export const sendToForgeSlicer = ({
         ? "forgeslicer:handoff:model"
         : "forgeslicer:handoff:stl"; // legacy
 
+    // Surface our own origin up front — if ForgeSlicer drops our
+    // `model` message because we're not on its allowlist, this is the
+    // exact string the user needs to paste into ForgeSlicer's config.
+    // eslint-disable-next-line no-console
+    console.info(
+      `[LithoForge→ForgeSlicer] handoff starting from origin ${window.location.origin} → ${FORGESLICER_ORIGIN}`,
+    );
+
     // 1. Open the popup synchronously from the user gesture.
     const popup = window.open(FORGESLICER_HANDOFF_URL, "_blank");
     if (!popup || popup.closed || typeof popup.closed === "undefined") {
@@ -127,6 +148,12 @@ export const sendToForgeSlicer = ({
           FORGESLICER_ORIGIN,
           [modelBuffer], // zero-copy transfer
         );
+        // eslint-disable-next-line no-console
+        console.info(
+          `[LithoForge→ForgeSlicer] posted ${format.toUpperCase()} payload (${
+            modelBuffer.byteLength
+          } bytes) to ${FORGESLICER_ORIGIN}`,
+        );
         finish(resolve)();
       } catch (err) {
         finish(reject)(err);
@@ -135,7 +162,19 @@ export const sendToForgeSlicer = ({
 
     const onMessage = (e) => {
       // Strict origin check — never trust a postMessage without it.
-      if (e.origin !== FORGESLICER_ORIGIN) return;
+      // Warn (instead of silently dropping) when an unexpected origin
+      // pings us; this is invaluable when diagnosing a stuck handoff
+      // because it tells us whether ForgeSlicer actually reached us
+      // and from which origin (e.g. www. vs apex, staging vs prod).
+      if (e.origin !== FORGESLICER_ORIGIN) {
+        if (e.data && typeof e.data === "object" && typeof e.data.type === "string" && e.data.type.startsWith("forgeslicer:")) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[LithoForge] dropped ${e.data.type} from non-allowlisted origin ${e.origin} (expected ${FORGESLICER_ORIGIN})`,
+          );
+        }
+        return;
+      }
       if (e.data?.type !== "forgeslicer:handoff:ready") return;
       readyReceived = true;
       if (modelBuffer) post();
@@ -145,6 +184,13 @@ export const sendToForgeSlicer = ({
     // 3. Generous 90 s timeout (handles slow 4G + 30 MB files).
     const timer = setTimeout(() => {
       try { popup.close(); } catch { /* noop */ }
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[LithoForge→ForgeSlicer] handoff timed out after 90 s. readyReceived=${readyReceived}, modelBuffered=${!!modelBuffer}. ` +
+          (readyReceived
+            ? `Our origin ${window.location.origin} is likely NOT on ForgeSlicer's allowlist — add it there.`
+            : `ForgeSlicer never sent its 'ready' ping — check ${FORGESLICER_HANDOFF_URL} is reachable and that it posts back to ${window.location.origin}.`),
+      );
       finish(reject)(new HandoffTimeout(
         "ForgeSlicer didn't respond within 90 s — please try again.",
       ));
@@ -174,4 +220,4 @@ export const sendToForgeSlicer = ({
     })();
   });
 
-export { FORGESLICER_ORIGIN };
+export { FORGESLICER_ORIGIN, FORGESLICER_HANDOFF_URL };

@@ -789,6 +789,32 @@ XML, iterate `<object>` elements — each has a `<metadatagroup>` with
 `Metadata/model_settings.config` for the Bambu-style extruder
 indexing if your slicer pipeline needs it.
 
+## Implemented (2026-02-27) — ForgeSlicer handoff diagnostics + env-configurable origin
+- [x] **Root cause of "Handoff didn't complete"**: ForgeSlicer's `ALLOWED_OPENER_ORIGINS`
+      didn't include the LithoForge preview URL
+      (`https://color-match-slicer.preview.emergentagent.com`), so it silently dropped
+      our `forgeslicer:handoff:model` postMessage and timed out at 90 s.
+- [x] **LithoForge-side diagnostics added** to `src/lib/forgeslicerHandoff.js`:
+      - `console.info` on handoff start, logging both our `window.location.origin`
+        and the target ForgeSlicer origin (the exact string to paste into ForgeSlicer's
+        allowlist).
+      - `console.warn` (instead of silent early-return) when we drop an inbound
+        `forgeslicer:*` message whose origin doesn't match our expected one — so
+        the "wrong ForgeSlicer origin" failure mode (apex vs www, prod vs staging)
+        is now visible in the console.
+      - Timeout warning now reports `readyReceived` / `modelBuffered` state so
+        users can tell whether ForgeSlicer never pinged us vs ForgeSlicer received
+        the ping but dropped our payload.
+- [x] **Env-configurable target**: `REACT_APP_FORGESLICER_ORIGIN` +
+      `REACT_APP_FORGESLICER_HANDOFF_URL` override the hard-coded
+      `https://forgeslicer.com` / `/handoff` for staging/dev pointing.
+- [x] **New Jest test**: asserts wrong-origin `ready` messages emit a `console.warn`
+      containing the offending origin and never trigger `postMessage`. 4/4 Jest
+      tests passing.
+- [x] **Action required on ForgeSlicer side** (out-of-repo): add
+      `https://color-match-slicer.preview.emergentagent.com` to ForgeSlicer's
+      opener-origin allowlist. Once added, the preview build's handoff will work.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG
