@@ -234,6 +234,305 @@ def _build_mesh(
 
 
 # ---------------------------------------------------------------------------
+# Per-filament slab meshing (for colour-aware 3MF export)
+# ---------------------------------------------------------------------------
+
+def _build_slab_mesh(
+    clipped_layers: np.ndarray,
+    z_floor_mm: float,
+    layer_height_mm: float,
+    geo: GeometrySpec,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Watertight slab mesh: each pixel rises `clipped_layers[r,c]`
+    layer-heights above `z_floor_mm`. Pixels where `clipped_layers == 0`
+    are absent (no geometry contributed). Used by the per-colour 3MF
+    writer so every filament gets its own watertight `<object>`.
+
+    Emits:
+        - top    triangles (per-pixel z = floor + clipped*lh)
+        - bottom triangles (flat at z = floor)
+        - perimeter side walls where the slab footprint ends
+        - "step" side walls between two adjacent valid pixels whose
+           clipped heights differ (so the topmost filament's slab
+           reproduces the original lithophane silhouette).
+    """
+    h, w = clipped_layers.shape
+
+    # Build a per-pixel "synthetic layer_map" we can pass through
+    # _build_vertices. Pixels where this filament is absent get z=0 too
+    # (they're masked out and never participate in faces).
+    synthetic = clipped_layers.astype(np.float64)
+    top, bottom = _build_vertices(synthetic, layer_height_mm, geo)
+    # Translate vertices vertically to the slab's floor, and pin the
+    # bottom plane exactly at that floor (top inherits z_floor + clipped*lh).
+    top[..., 2] += z_floor_mm
+    bottom[..., 2] = z_floor_mm
+
+    valid = clipped_layers > 0
+    cell_ok = (
+        valid[:-1, :-1] & valid[:-1, 1:] & valid[1:, :-1] & valid[1:, 1:]
+    )
+    # Combine with disc circular mask if applicable.
+    if geo.mode == "disc":
+        disc_valid = _disc_valid_mask(h, w, geo)
+        cell_ok &= (
+            disc_valid[:-1, :-1] & disc_valid[:-1, 1:]
+            & disc_valid[1:, :-1] & disc_valid[1:, 1:]
+        )
+
+    verts_top = top.reshape(-1, 3)
+    verts_bot = bottom.reshape(-1, 3)
+    vertices = np.concatenate([verts_top, verts_bot], axis=0)
+    top_offset = 0
+    bot_offset = verts_top.shape[0]
+
+    def ti(y, x):
+        return top_offset + y * w + x
+
+    def bi(y, x):
+        return bot_offset + y * w + x
+
+    faces: List[Tuple[int, int, int]] = []
+
+    for y in range(h - 1):
+        for x in range(w - 1):
+            if not cell_ok[y, x]:
+                continue
+            a, b = ti(y, x), ti(y, x + 1)
+            c, d = ti(y + 1, x + 1), ti(y + 1, x)
+            faces.append((a, b, c))
+            faces.append((a, c, d))
+            ba, bb = bi(y, x), bi(y, x + 1)
+            bc, bd = bi(y + 1, x + 1), bi(y + 1, x)
+            faces.append((ba, bc, bb))
+            faces.append((ba, bd, bc))
+
+    # Side walls: any cell-edge where one neighbour is invalid produces
+    # an external wall; any internal edge where neighbouring tops differ
+    # by more than half a layer produces a step wall.
+    def add_wall(t0_idx, t1_idx, b0_idx, b1_idx, outward_right):
+        if outward_right:
+            faces.append((t0_idx, b0_idx, b1_idx))
+            faces.append((t0_idx, b1_idx, t1_idx))
+        else:
+            faces.append((t0_idx, b1_idx, b0_idx))
+            faces.append((t0_idx, t1_idx, b1_idx))
+
+    half_layer_mm = layer_height_mm * 0.5
+
+    for y in range(h - 1):
+        for x in range(w - 1):
+            if not cell_ok[y, x]:
+                continue
+            # External walls — emit one quad spanning the cell edge from
+            # slab floor up to slab top at that edge.
+            if y == 0 or not cell_ok[y - 1, x]:
+                add_wall(ti(y, x + 1), ti(y, x), bi(y, x + 1), bi(y, x), True)
+            if y == h - 2 or not cell_ok[y + 1, x]:
+                add_wall(ti(y + 1, x), ti(y + 1, x + 1),
+                         bi(y + 1, x), bi(y + 1, x + 1), True)
+            if x == 0 or not cell_ok[y, x - 1]:
+                add_wall(ti(y, x), ti(y + 1, x), bi(y, x), bi(y + 1, x), True)
+            if x == w - 2 or not cell_ok[y, x + 1]:
+                add_wall(ti(y + 1, x + 1), ti(y, x + 1),
+                         bi(y + 1, x + 1), bi(y, x + 1), True)
+
+    # Internal step walls — only meaningful for the topmost slab whose
+    # top follows the layer_map. We close vertical gaps between adjacent
+    # valid cells whose top z's differ.
+    for y in range(h - 1):
+        for x in range(w - 2):
+            if not cell_ok[y, x] or not cell_ok[y, x + 1]:
+                continue
+            z_left = top[y, x + 1, 2]
+            z_right = top[y, x + 2, 2]
+            if abs(z_left - z_right) > half_layer_mm:
+                # Step at the shared edge between cell(y,x) and cell(y,x+1)
+                # — both share vertices (y, x+1) and (y+1, x+1).
+                t0, t1 = ti(y, x + 1), ti(y + 1, x + 1)
+                # Need synthesised "fake bottom" verts that sit at the
+                # LOWER of the two tops; we already have those embedded
+                # as the actual top vertex on the lower-side cell.
+                # Simpler: emit two triangles between the two cells'
+                # shared edge tops + the lower neighbour's matching edge.
+                if z_left > z_right:
+                    # Wall faces +x (right neighbour is lower).
+                    faces.append((t0, t1, ti(y + 1, x + 2)))
+                    faces.append((t0, ti(y + 1, x + 2), ti(y, x + 2)))
+                else:
+                    faces.append((t0, ti(y, x + 2), ti(y + 1, x + 2)))
+                    faces.append((t0, ti(y + 1, x + 2), t1))
+
+    for y in range(h - 2):
+        for x in range(w - 1):
+            if not cell_ok[y, x] or not cell_ok[y + 1, x]:
+                continue
+            z_up = top[y + 1, x, 2]
+            z_dn = top[y + 2, x, 2]
+            if abs(z_up - z_dn) > half_layer_mm:
+                t0, t1 = ti(y + 1, x), ti(y + 1, x + 1)
+                if z_up > z_dn:
+                    faces.append((t0, ti(y + 2, x + 1), t1))
+                    faces.append((t0, ti(y + 2, x), ti(y + 2, x + 1)))
+                else:
+                    faces.append((t0, t1, ti(y + 2, x + 1)))
+                    faces.append((t0, ti(y + 2, x + 1), ti(y + 2, x)))
+
+    faces_arr = (
+        np.array(faces, dtype=np.int32)
+        if faces else np.zeros((0, 3), dtype=np.int32)
+    )
+    return vertices, faces_arr
+
+
+def build_per_filament_slabs(
+    layer_map: np.ndarray,
+    swap_layer_indices: List[int],
+    n_filaments: int,
+    layer_height_mm: float,
+    geo: GeometrySpec,
+) -> List[Tuple[int, np.ndarray, np.ndarray]]:
+    """Return [(filament_idx, vertices, faces), ...] — one tuple per
+    filament that actually contributes geometry. Filament order matches
+    the input filaments list (the print's swap order).
+
+    For filament k:
+      bottoms[k] = (cumulative layer index where filament k begins)
+      tops   [k] = (next swap layer index OR layer_map.max()+1 for last)
+      clipped[r,c] = max(0, min(layer_map[r,c], tops[k]) - bottoms[k])
+    """
+    if n_filaments <= 0:
+        return []
+    bottoms = [0] + list(swap_layer_indices)
+    top_cap = int(np.max(layer_map)) + 1
+    tops = list(swap_layer_indices) + [top_cap]
+    # Pad / truncate so we have exactly n_filaments slabs
+    while len(bottoms) < n_filaments:
+        bottoms.append(top_cap)
+    while len(tops) < n_filaments:
+        tops.append(top_cap)
+    bottoms = bottoms[:n_filaments]
+    tops = tops[:n_filaments]
+
+    slabs: List[Tuple[int, np.ndarray, np.ndarray]] = []
+    for k in range(n_filaments):
+        if tops[k] <= bottoms[k]:
+            continue
+        clipped = np.clip(
+            layer_map - bottoms[k], 0, tops[k] - bottoms[k]
+        ).astype(np.int32)
+        if int((clipped > 0).sum()) == 0:
+            continue
+        verts, faces = _build_slab_mesh(
+            clipped, bottoms[k] * layer_height_mm, layer_height_mm, geo,
+        )
+        if faces.shape[0] == 0:
+            continue
+        slabs.append((k, verts, faces))
+    return slabs
+
+
+def _mesh_to_3mf_object(
+    obj_id: int,
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    filament_idx: int,
+    filament_name: str,
+    filament_hex: str,
+) -> str:
+    """A single 3MF `<object>` tagged with the source filament slot,
+    name and RGB hex. Uses standard `<metadatagroup>` (core spec) so
+    ANY 3MF reader — including ForgeSlicer — can recover the colour
+    without needing a vendor extension."""
+    parts: List[str] = [
+        f'<object id="{obj_id}" type="model" name="{_xml_escape(filament_name)}">',
+        '<metadatagroup>',
+        f'<metadata name="lithoforge:filament_slot">{filament_idx}</metadata>',
+        f'<metadata name="lithoforge:filament_name">{_xml_escape(filament_name)}</metadata>',
+        f'<metadata name="lithoforge:filament_hex">{filament_hex.upper()}</metadata>',
+        '</metadatagroup>',
+        '<mesh><vertices>',
+    ]
+    for v in vertices:
+        parts.append(f'<vertex x="{v[0]:.4f}" y="{v[1]:.4f}" z="{v[2]:.4f}"/>')
+    parts.append('</vertices><triangles>')
+    for f in faces:
+        parts.append(f'<triangle v1="{f[0]}" v2="{f[1]}" v3="{f[2]}"/>')
+    parts.append('</triangles></mesh></object>')
+    return "".join(parts)
+
+
+def _xml_escape(s: str) -> str:
+    return (
+        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace('"', "&quot;").replace("'", "&apos;")
+    )
+
+
+def _color_3mf_model(
+    slabs: List[Tuple[int, np.ndarray, np.ndarray]],
+    filaments: List[Tuple[str, str]],
+) -> str:
+    """Multi-object 3MF model XML. Each filament that contributes
+    geometry becomes an `<object>` tagged with its slot and hex; all
+    objects share a single `<build>` so the slicer treats them as one
+    print.
+    """
+    parts: List[str] = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<model unit="millimeter" xml:lang="en-US" ',
+        'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">',
+        '<metadata name="Application">LithoForge</metadata>',
+        '<resources>',
+    ]
+    obj_id = 1
+    ids_in_build: List[Tuple[int, int]] = []
+    for filament_idx, verts, faces in slabs:
+        name, hex_ = filaments[filament_idx]
+        parts.append(_mesh_to_3mf_object(
+            obj_id, verts, faces, filament_idx, name, hex_,
+        ))
+        ids_in_build.append((obj_id, filament_idx))
+        obj_id += 1
+    parts.append('</resources>')
+    parts.append('<build>')
+    for oid, slot in ids_in_build:
+        # `transform` is identity — slabs are already positioned in mm.
+        # Bambu Studio / OrcaSlicer / PrusaSlicer all honour a
+        # `printable="1"` attribute on items; we leave it default-true.
+        parts.append(
+            f'<item objectid="{oid}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>'
+        )
+    parts.append('</build>')
+    parts.append('</model>')
+    return "".join(parts)
+
+
+def _model_settings_config_color(
+    slabs: List[Tuple[int, np.ndarray, np.ndarray]],
+) -> str:
+    """Bambu/Orca convention: per-object `extruder` mapping in
+    `Metadata/model_settings.config`. Object ids start at 1 to match
+    `_color_3mf_model`. Bambu uses 1-indexed extruder numbers, so
+    filament slot 0 maps to extruder 1, slot 1 → 2, etc."""
+    rows: List[str] = []
+    obj_id = 1
+    for filament_idx, *_ in slabs:
+        rows.append(
+            f'    <object id="{obj_id}">\n'
+            f'      <metadata key="extruder" value="{filament_idx + 1}"/>\n'
+            f'    </object>'
+        )
+        obj_id += 1
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<config>\n'
+        + "\n".join(rows)
+        + '\n</config>\n'
+    )
+
+
+# ---------------------------------------------------------------------------
 # STL (binary) writer
 # ---------------------------------------------------------------------------
 
@@ -501,11 +800,29 @@ def write_3mf(
     layer_height_mm: float,
     profile: Optional[PrinterProfile] = None,
     license_text: str = "",
+    per_filament_slabs: Optional[
+        List[Tuple[int, np.ndarray, np.ndarray]]
+    ] = None,
 ) -> bytes:
-    """Build a minimal 3MF container with the mesh + colour metadata."""
+    """Build a 3MF container with the mesh + colour metadata.
+
+    If `per_filament_slabs` is provided the model XML emits one
+    `<object>` per filament (each tagged with `lithoforge:filament_slot`,
+    `:filament_hex`, `:filament_name` metadata + a Bambu-style
+    `extruder` value in `Metadata/model_settings.config`). This is the
+    representation downstream tools — ForgeSlicer in particular —
+    consume to recover per-colour regions without re-deriving them from
+    the Z-band layer history.
+
+    Falling back to a single merged mesh (`per_filament_slabs is None`)
+    is supported for STL parity / legacy callers.
+    """
     if profile is None:
         profile = get_profile("generic_orca")
-    model_xml = _mesh_to_3mf_model(vertices, faces)
+    if per_filament_slabs:
+        model_xml = _color_3mf_model(per_filament_slabs, filaments)
+    else:
+        model_xml = _mesh_to_3mf_model(vertices, faces)
     project_cfg = _project_config(
         filaments, swap_heights_mm, layer_height_mm, profile, license_text
     )
@@ -516,6 +833,11 @@ def write_3mf(
         z.writestr("_rels/.rels", _RELS)
         z.writestr("3D/3dmodel.model", model_xml)
         z.writestr("Metadata/project_settings.config", project_cfg)
+        if per_filament_slabs:
+            z.writestr(
+                "Metadata/model_settings.config",
+                _model_settings_config_color(per_filament_slabs),
+            )
     return buf.getvalue()
 
 
@@ -540,9 +862,24 @@ def build_export(
         swap_heights_mm, swap_colors, filament_names, layer_height_mm, profile
     )
     filaments = list(zip(filament_names, swap_colors))
+
+    # Per-filament slab decomposition for the colour-aware 3MF.
+    # `swap_heights_mm` is the absolute Z (mm) at which each filament
+    # change occurs; convert to layer-indices for slab boundaries.
+    swap_layer_indices = [
+        max(1, int(round(z / layer_height_mm))) for z in swap_heights_mm
+    ]
+    per_filament_slabs = build_per_filament_slabs(
+        layer_map,
+        swap_layer_indices,
+        len(filaments),
+        layer_height_mm,
+        geo,
+    )
     threemf = write_3mf(
         vertices, faces, filaments, swap_heights_mm, layer_height_mm,
         profile, license_text,
+        per_filament_slabs=per_filament_slabs,
     )
     return {
         "stl": stl_bytes,

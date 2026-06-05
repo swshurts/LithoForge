@@ -22,8 +22,12 @@ export const Header = ({ onGenerate, canGenerate, generating, jobId }) => {
     setSending(true);
     try {
       await sendToForgeSlicer({
-        stlUrl: exportUrl(jobId, "stl"),
-        filename: `lithoforge-${jobId.slice(0, 8)}.stl`,
+        // 3MF carries the per-filament objects + slot/RGB metadata that
+        // ForgeSlicer needs to recover the full colour palette. STL would
+        // strip that down to a single colourless mesh, so this endpoint
+        // is the correct handoff format.
+        modelUrl: exportUrl(jobId, "3mf"),
+        filename: `lithoforge-${jobId.slice(0, 8)}.3mf`,
         sourceUrl: `${window.location.origin}/studio?job=${jobId}`,
       });
       toast.success("Sent to ForgeSlicer", { duration: 3500 });

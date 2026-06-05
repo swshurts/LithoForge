@@ -45,10 +45,10 @@ describe("sendToForgeSlicer", () => {
 
   afterEach(() => jest.restoreAllMocks());
 
-  it("ships the STL when ForgeSlicer signals ready", async () => {
+  it("ships the model when ForgeSlicer signals ready", async () => {
     const promise = sendToForgeSlicer({
-      stlUrl: "https://example.com/api/export/abc/stl",
-      filename: "test.stl",
+      modelUrl: "https://example.com/api/export/abc/3mf",
+      filename: "test.3mf",
       sourceUrl: "https://lithoforge.com/studio?job=abc",
     });
 
@@ -66,8 +66,9 @@ describe("sendToForgeSlicer", () => {
     expect(fakePopup.postMessage).toHaveBeenCalledTimes(1);
     const [msg, origin] = fakePopup.postMessage.mock.calls[0];
     expect(origin).toBe(FORGESLICER_ORIGIN);
-    expect(msg.type).toBe("forgeslicer:handoff:stl");
-    expect(msg.filename).toBe("test.stl");
+    expect(msg.type).toBe("forgeslicer:handoff:model");
+    expect(msg.format).toBe("3mf");
+    expect(msg.filename).toBe("test.3mf");
     expect(msg.sourceLabel).toBe("LithoForge");
     expect(msg.data).toBeInstanceOf(ArrayBuffer);
   });
@@ -81,7 +82,7 @@ describe("sendToForgeSlicer", () => {
   it("throws PopupBlocked when window.open returns null", async () => {
     openSpy.mockReturnValue(null);
     await expect(
-      sendToForgeSlicer({ stlUrl: "/x", filename: "x", sourceUrl: "/" }),
+      sendToForgeSlicer({ modelUrl: "/x", filename: "x.3mf", sourceUrl: "/" }),
     ).rejects.toBeInstanceOf(PopupBlocked);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -89,7 +90,7 @@ describe("sendToForgeSlicer", () => {
   it("throws AuthRequired on 401", async () => {
     fetchSpy.mockResolvedValueOnce({ ok: false, status: 401 });
     await expect(
-      sendToForgeSlicer({ stlUrl: "/x", filename: "x", sourceUrl: "/" }),
+      sendToForgeSlicer({ modelUrl: "/x", filename: "x.3mf", sourceUrl: "/" }),
     ).rejects.toBeInstanceOf(AuthRequired);
     expect(fakePopup.close).toHaveBeenCalled();
   });

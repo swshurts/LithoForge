@@ -705,6 +705,90 @@ window.addEventListener("message", e => {
 });
 ```
 
+## Implemented (2026-02-26) — Colour-aware 3MF export + ForgeSlicer handoff switch
+
+- [x] **New per-filament slab geometry** (`exporters.py`):
+        * `_build_slab_mesh(clipped_layers, z_floor_mm, lh, geo)`
+          builds a watertight slab between a constant floor and a
+          per-pixel top. Includes external perimeter walls AND step
+          walls between adjacent valid pixels whose tops differ
+          (necessary for the topmost filament whose slab reproduces
+          the lithophane silhouette).
+        * `build_per_filament_slabs(layer_map, swap_layer_indices,
+          n_filaments, lh, geo)` returns
+          `[(filament_idx, vertices, faces), ...]`. Filament k's slab
+          covers Z ∈ [bottoms[k]·lh, min(layer_map, tops[k])·lh].
+          Skips filaments whose entire band sits above the print's
+          column heights (so a 3-filament palette where only 2
+          actually print produces 2 objects, not 3 ghost ones).
+- [x] **Colour-aware 3MF writer** (`exporters.py`):
+        * `_color_3mf_model(slabs, filaments)` emits one `<object>`
+          per filament that contributes geometry. Each carries a
+          `<metadatagroup>` with:
+            - `lithoforge:filament_slot` — 0-indexed swap order
+            - `lithoforge:filament_name` — human-readable
+            - `lithoforge:filament_hex`  — `#RRGGBB` upper-case
+        * Uses only the 2015/02 3MF Core schema (no vendor extensions
+          required to read the metadata back).
+        * `_model_settings_config_color(slabs)` emits the
+          Bambu/Orca-convention `Metadata/model_settings.config` with
+          per-object `extruder` keys (1-indexed) so Bambu Studio /
+          OrcaSlicer / PrusaSlicer auto-assign the correct filament.
+        * `write_3mf(...)` gained an optional `per_filament_slabs=`
+          argument. When supplied it emits the multi-object output;
+          when omitted callers get the legacy single-mesh 3MF.
+        * `build_export(...)` now always computes the slabs and
+          passes them — every `/api/export/{id}/3mf` download is
+          per-colour from this point on.
+- [x] **Handoff switched to 3MF** (`forgeslicerHandoff.js` +
+      `Header.jsx`):
+        * Old `stlUrl: exportUrl(jobId, "stl")` → new `modelUrl:
+          exportUrl(jobId, "3mf")` so ForgeSlicer receives the full
+          per-colour palette instead of a flat colourless mesh.
+        * New postMessage type `forgeslicer:handoff:model` (the old
+          `forgeslicer:handoff:stl` is still emitted when a legacy
+          caller passes `stlUrl=` — keeps any deployed ForgeSlicer
+          build that pre-dates this change running).
+        * Payload gained a `format: "3mf" | "stl"` discriminator so
+          the receiver can branch cleanly.
+        * The Bambu-style `<item extruder="N"/>` per-object info is
+          on the ForgeSlicer side reachable via either the metadata
+          group or the model_settings.config file inside the 3MF zip.
+- [x] **Tests**: 4 new pytests in `test_color_3mf.py` (slab Z-bands,
+      empty-band skip, full e2e through `build_export` asserting
+      3 objects + correct metadata + correct extruder mapping,
+      legacy single-mesh fallback). 3 Jest tests updated to
+      `modelUrl` + `forgeslicer:handoff:model`. **58/58 backend +
+      3/3 Jest** all green.
+- [x] **Verified live** via `/api/export/{id}/3mf` curl: produced
+      3-object 3MF tagged `White / Orange / Red`, each with 193 596
+      triangles, model_settings.config with extruder 1/3/4 mapping.
+
+### ForgeSlicer receiver-side spec
+
+```js
+window.addEventListener("message", (e) => {
+  if (e.origin !== "https://lithoforge.com") return;
+  if (e.data?.type !== "forgeslicer:handoff:model") return;
+  // e.data.data        — ArrayBuffer of the 3MF zip
+  // e.data.format      — "3mf"
+  // e.data.filename    — e.g. "lithoforge-abc12345.3mf"
+  // e.data.sourceLabel — "LithoForge"
+  // e.data.sourceUrl   — deep-link back to the source job
+});
+// Tell LithoForge we're ready:
+window.opener?.postMessage(
+  {type: "forgeslicer:handoff:ready"},
+  "https://lithoforge.com",
+);
+```
+
+To parse the 3MF inside ForgeSlicer: unzip, read `3D/3dmodel.model`
+XML, iterate `<object>` elements — each has a `<metadatagroup>` with
+`lithoforge:filament_slot/name/hex`. Pair that with the optional
+`Metadata/model_settings.config` for the Bambu-style extruder
+indexing if your slicer pipeline needs it.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

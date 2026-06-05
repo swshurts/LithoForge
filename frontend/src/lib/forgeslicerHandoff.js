@@ -2,23 +2,34 @@
  * "Send to ForgeSlicer" handoff.
  *
  * Opens the ForgeSlicer handoff endpoint in a new tab and ships the
- * current job's STL bytes via `postMessage` once ForgeSlicer signals
- * `forgeslicer:handoff:ready`. The contract — set by ForgeSlicer:
+ * current job's 3MF bytes via `postMessage` once ForgeSlicer signals
+ * `forgeslicer:handoff:ready`. We send the 3MF (not STL) because the
+ * 3MF carries per-filament `<object>` entries tagged with filament_slot
+ * + RGB hex + filament_name — ForgeSlicer can recover the full colour
+ * palette directly from those objects without re-deriving them.
+ *
+ * Wire contract:
  *
  *   ForgeSlicer → LithoForge:  { type: "forgeslicer:handoff:ready" }
- *   LithoForge → ForgeSlicer:  { type: "forgeslicer:handoff:stl",
+ *   LithoForge → ForgeSlicer:  { type: "forgeslicer:handoff:model",
+ *                                 format: "3mf",
  *                                 filename, data: ArrayBuffer,
  *                                 sourceLabel, sourceUrl }
  *
+ * (Older message type `forgeslicer:handoff:stl` is still emitted on
+ * the fallback path when a caller passes the legacy `stlUrl` arg, so
+ * a stale ForgeSlicer build that hasn't shipped the new listener yet
+ * keeps working — see `_postPayload` below.)
+ *
  * This module also handles:
  *  - Popup blockers (caller catches the thrown `PopupBlocked` and toasts)
- *  - The user not signing in (STL fetch returns 401 → throws AuthRequired)
+ *  - The user not signing in (model fetch returns 401 → throws AuthRequired)
  *  - A handshake timeout (ForgeSlicer never sends `ready`) — abandons
- *    cleanly after 60 s so we don't leak the `message` listener.
+ *    cleanly after 90 s so we don't leak the `message` listener.
  *
  * Origin guard: we ONLY accept `ready` from `FORGESLICER_ORIGIN` and we
  * ONLY post to that same origin. The ArrayBuffer is transferred (zero-
- * copy) so neither side keeps a duplicate of the STL.
+ * copy) so neither side keeps a duplicate of the model bytes.
  */
 
 const FORGESLICER_ORIGIN = "https://forgeslicer.com";
@@ -55,8 +66,25 @@ export class HandoffTimeout extends Error {}
  * @returns {Promise<void>}       resolves once we've posted the STL.
  *                                rejects on popup-block / auth / timeout.
  */
-export const sendToForgeSlicer = ({ stlUrl, filename, sourceUrl }) =>
+export const sendToForgeSlicer = ({
+  modelUrl,
+  filename,
+  sourceUrl,
+  // Legacy alias — older callers may still pass `stlUrl`.
+  stlUrl,
+}) =>
   new Promise((resolve, reject) => {
+    const url = modelUrl || stlUrl;
+    // Detect the format from the filename / URL extension so we can
+    // tag the postMessage correctly (3mf carries per-colour metadata;
+    // stl is flat geometry).
+    const ext = (filename || url || "").toLowerCase().split(".").pop();
+    const format = ext === "3mf" ? "3mf" : "stl";
+    const messageType =
+      format === "3mf"
+        ? "forgeslicer:handoff:model"
+        : "forgeslicer:handoff:stl"; // legacy
+
     // 1. Open the popup synchronously from the user gesture.
     const popup = window.open(FORGESLICER_HANDOFF_URL, "_blank");
     if (!popup || popup.closed || typeof popup.closed === "undefined") {
@@ -69,7 +97,7 @@ export const sendToForgeSlicer = ({ stlUrl, filename, sourceUrl }) =>
     // 2. Pre-attach the listener IMMEDIATELY so we don't miss the
     //    `ready` ping that ForgeSlicer fires before our fetch resolves.
     let readyReceived = false;
-    let stlBuffer = null;
+    let modelBuffer = null;
     let settled = false;
 
     const cleanup = () => {
@@ -89,14 +117,15 @@ export const sendToForgeSlicer = ({ stlUrl, filename, sourceUrl }) =>
       try {
         popup.postMessage(
           {
-            type: "forgeslicer:handoff:stl",
+            type: messageType,
+            format, // "3mf" | "stl"
             filename,
-            data: stlBuffer,
+            data: modelBuffer,
             sourceLabel: "LithoForge",
             sourceUrl,
           },
           FORGESLICER_ORIGIN,
-          [stlBuffer], // zero-copy transfer
+          [modelBuffer], // zero-copy transfer
         );
         finish(resolve)();
       } catch (err) {
@@ -109,11 +138,11 @@ export const sendToForgeSlicer = ({ stlUrl, filename, sourceUrl }) =>
       if (e.origin !== FORGESLICER_ORIGIN) return;
       if (e.data?.type !== "forgeslicer:handoff:ready") return;
       readyReceived = true;
-      if (stlBuffer) post();
+      if (modelBuffer) post();
     };
     window.addEventListener("message", onMessage);
 
-    // 3. Generous 90 s timeout (handles slow 4G + 30 MB STLs).
+    // 3. Generous 90 s timeout (handles slow 4G + 30 MB files).
     const timer = setTimeout(() => {
       try { popup.close(); } catch { /* noop */ }
       finish(reject)(new HandoffTimeout(
@@ -121,11 +150,11 @@ export const sendToForgeSlicer = ({ stlUrl, filename, sourceUrl }) =>
       ));
     }, 90_000);
 
-    // 4. Fetch the STL in parallel. If `ready` is already buffered when
-    //    the fetch resolves, fire immediately.
+    // 4. Fetch the model bytes in parallel. If `ready` is already
+    //    buffered when the fetch resolves, fire immediately.
     (async () => {
       try {
-        const res = await fetch(stlUrl, { credentials: "include" });
+        const res = await fetch(url, { credentials: "include" });
         if (res.status === 401) {
           try { popup.close(); } catch { /* noop */ }
           finish(reject)(new AuthRequired("Sign in to send to ForgeSlicer."));
@@ -133,10 +162,10 @@ export const sendToForgeSlicer = ({ stlUrl, filename, sourceUrl }) =>
         }
         if (!res.ok) {
           try { popup.close(); } catch { /* noop */ }
-          finish(reject)(new Error(`STL fetch failed (${res.status})`));
+          finish(reject)(new Error(`Model fetch failed (${res.status})`));
           return;
         }
-        stlBuffer = await res.arrayBuffer();
+        modelBuffer = await res.arrayBuffer();
         if (readyReceived) post();
       } catch (err) {
         try { popup.close(); } catch { /* noop */ }
