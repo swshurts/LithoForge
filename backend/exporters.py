@@ -40,6 +40,125 @@ class GeometrySpec:
 # Mesh building
 # ---------------------------------------------------------------------------
 
+
+def _greedy_top_rects(
+    z_top: np.ndarray,
+    valid_cells: np.ndarray,
+) -> List[Tuple[int, int, int, int, bool]]:
+    """Decompose a cell grid into maximal rectangles where all 4 corner
+    vertex z's are identical. Lossless mesh decimation — fewer triangles,
+    same geometry to the slicer.
+
+    Args:
+        z_top: (H+1, W+1) per-vertex z values (mm).
+        valid_cells: (H, W) bool — True where the cell should be meshed.
+
+    Returns:
+        List of (r0, c0, r1, c1, flat) tuples — inclusive cell ranges.
+        `flat=True` means the rect can emit ONE quad (2 triangles) using
+        the 4 outer corners. `flat=False` is a singleton cell that still
+        has unequal corners and must emit its 2 triangles using its own
+        4 corner vertices.
+
+    Notes on T-junctions: greedy rectangle merging can leave a vertex on
+    the interior of an adjacent rectangle's edge. Slicers (Bambu Studio /
+    OrcaSlicer / PrusaSlicer / Cura) handle this gracefully because they
+    slice via 2D plane intersections — the T-junction does not affect the
+    sliced contours. For pure rendering use cases T-junctions can show
+    hairline cracks; we accept that tradeoff because the target audience
+    is 3D printing slicers, not real-time rendering.
+    """
+    H, W = valid_cells.shape
+    if H == 0 or W == 0:
+        return []
+
+    # Per-cell: do all 4 corner vertices share the same z?
+    z00 = z_top[:-1, :-1]
+    z01 = z_top[:-1, 1:]
+    z10 = z_top[1:, :-1]
+    z11 = z_top[1:, 1:]
+    flat = (z00 == z01) & (z00 == z10) & (z00 == z11)
+
+    visited = np.zeros((H, W), dtype=bool)
+    rects: List[Tuple[int, int, int, int, bool]] = []
+
+    for r in range(H):
+        c = 0
+        while c < W:
+            if visited[r, c] or not valid_cells[r, c]:
+                c += 1
+                continue
+            if not flat[r, c]:
+                # Cell whose corners disagree — emit as a singleton; no
+                # merging possible without distorting the geometry.
+                visited[r, c] = True
+                rects.append((r, c, r, c, False))
+                c += 1
+                continue
+            z = float(z00[r, c])
+            # Extend rightward while cells are valid, flat, same-z, unvisited.
+            c_end = c
+            while c_end + 1 < W:
+                nxt = c_end + 1
+                if (
+                    visited[r, nxt]
+                    or not valid_cells[r, nxt]
+                    or not flat[r, nxt]
+                    or float(z00[r, nxt]) != z
+                ):
+                    break
+                c_end += 1
+            # Extend downward; every cell in [c..c_end] must match.
+            r_end = r
+            while r_end + 1 < H:
+                row_slice = slice(c, c_end + 1)
+                rr = r_end + 1
+                if (
+                    visited[rr, row_slice].any()
+                    or not valid_cells[rr, row_slice].all()
+                    or not flat[rr, row_slice].all()
+                    or not (z00[rr, row_slice] == z).all()
+                ):
+                    break
+                r_end += 1
+            visited[r:r_end + 1, c:c_end + 1] = True
+            rects.append((r, c, r_end, c_end, True))
+            c = c_end + 1
+
+    return rects
+
+
+def _bottom_rects(valid_cells: np.ndarray) -> List[Tuple[int, int, int, int]]:
+    """Decompose `valid_cells` into maximal rectangles (used for the
+    flat slab bottom — all bottom z's are equal so we just need to
+    cover the footprint with as few quads as possible)."""
+    H, W = valid_cells.shape
+    if H == 0 or W == 0:
+        return []
+    visited = np.zeros((H, W), dtype=bool)
+    rects: List[Tuple[int, int, int, int]] = []
+    for r in range(H):
+        c = 0
+        while c < W:
+            if visited[r, c] or not valid_cells[r, c]:
+                c += 1
+                continue
+            c_end = c
+            while c_end + 1 < W and not visited[r, c_end + 1] and valid_cells[r, c_end + 1]:
+                c_end += 1
+            r_end = r
+            while r_end + 1 < H:
+                rr = r_end + 1
+                row_slice = slice(c, c_end + 1)
+                if visited[rr, row_slice].any() or not valid_cells[rr, row_slice].all():
+                    break
+                r_end += 1
+            visited[r:r_end + 1, c:c_end + 1] = True
+            rects.append((r, c, r_end, c_end))
+            c = c_end + 1
+    return rects
+
+
 def _build_vertices(
     layer_map: np.ndarray,
     layer_height_mm: float,
@@ -154,29 +273,62 @@ def _build_mesh(
 
     faces: List[Tuple[int, int, int]] = []
 
-    # Top surface (only where cell is valid)
-    for y in range(h - 1):
-        for x in range(w - 1):
-            if not cell_ok[y, x]:
-                continue
-            a = ti(y, x)
-            b = ti(y, x + 1)
-            c = ti(y + 1, x + 1)
-            d = ti(y + 1, x)
-            faces.append((a, b, c))
-            faces.append((a, c, d))
-
-    # Bottom surface (reverse winding)
-    for y in range(h - 1):
-        for x in range(w - 1):
-            if not cell_ok[y, x]:
-                continue
-            a = bi(y, x)
-            b = bi(y, x + 1)
-            c = bi(y + 1, x + 1)
-            d = bi(y + 1, x)
-            faces.append((a, c, b))
-            faces.append((a, d, c))
+    if geo.mode in ("flat",):
+        # Greedy-meshed top + 2-triangle flat bottom: massive reduction
+        # for lithophanes with large flat regions (sky, background, etc.).
+        # The mesh remains watertight for slicing purposes (slicers do
+        # 2D plane intersections; T-junctions don't affect contours).
+        z_top_vert = top[..., 2]  # (h, w)
+        for (r0, c0, r1, c1, is_flat) in _greedy_top_rects(z_top_vert, cell_ok):
+            if is_flat:
+                a = ti(r0, c0)
+                b = ti(r0, c1 + 1)
+                c = ti(r1 + 1, c1 + 1)
+                d = ti(r1 + 1, c0)
+                faces.append((a, b, c))
+                faces.append((a, c, d))
+            else:
+                # Single non-flat cell — keep its 4-corner interpolation.
+                a = ti(r0, c0)
+                b = ti(r0, c0 + 1)
+                c = ti(r0 + 1, c0 + 1)
+                d = ti(r0 + 1, c0)
+                faces.append((a, b, c))
+                faces.append((a, c, d))
+        # Flat bottom: 2 triangles using the 4 perimeter corners — the
+        # interior bottom-grid vertices still exist (the side walls need
+        # them) but are not referenced by any bottom face.
+        a = bi(0, 0)
+        b = bi(0, w - 1)
+        c = bi(h - 1, w - 1)
+        d = bi(h - 1, 0)
+        # Reverse winding (normal points down).
+        faces.append((a, c, b))
+        faces.append((a, d, c))
+    else:
+        # Curved / cylindrical / disc: keep the per-cell tessellation
+        # because greedy merging doesn't help (curved surface has
+        # ~no equal-z neighbours).
+        for y in range(h - 1):
+            for x in range(w - 1):
+                if not cell_ok[y, x]:
+                    continue
+                a = ti(y, x)
+                b = ti(y, x + 1)
+                c = ti(y + 1, x + 1)
+                d = ti(y + 1, x)
+                faces.append((a, b, c))
+                faces.append((a, c, d))
+        for y in range(h - 1):
+            for x in range(w - 1):
+                if not cell_ok[y, x]:
+                    continue
+                a = bi(y, x)
+                b = bi(y, x + 1)
+                c = bi(y + 1, x + 1)
+                d = bi(y + 1, x)
+                faces.append((a, c, b))
+                faces.append((a, d, c))
 
     if geo.mode == "disc":
         # Walk every cell-edge where one neighbour is invalid (or off-grid)
@@ -305,18 +457,48 @@ def _build_slab_mesh(
 
     faces: List[Tuple[int, int, int]] = []
 
-    for y in range(h - 1):
-        for x in range(w - 1):
-            if not cell_ok[y, x]:
-                continue
-            a, b = ti(y, x), ti(y, x + 1)
-            c, d = ti(y + 1, x + 1), ti(y + 1, x)
-            faces.append((a, b, c))
-            faces.append((a, c, d))
-            ba, bb = bi(y, x), bi(y, x + 1)
-            bc, bd = bi(y + 1, x + 1), bi(y + 1, x)
+    if geo.mode == "flat":
+        # Greedy top + greedy bottom (both lossless). Walls + step walls
+        # stay per-pixel because they're already minimal: each external
+        # cell edge produces exactly one quad, and step walls only fire
+        # where adjacent tops differ.
+        z_top_vert = top[..., 2]
+        for (r0, c0, r1, c1, is_flat) in _greedy_top_rects(z_top_vert, cell_ok):
+            if is_flat:
+                a = ti(r0, c0)
+                b = ti(r0, c1 + 1)
+                c = ti(r1 + 1, c1 + 1)
+                d = ti(r1 + 1, c0)
+                faces.append((a, b, c))
+                faces.append((a, c, d))
+            else:
+                a = ti(r0, c0)
+                b = ti(r0, c0 + 1)
+                c = ti(r0 + 1, c0 + 1)
+                d = ti(r0 + 1, c0)
+                faces.append((a, b, c))
+                faces.append((a, c, d))
+        for (r0, c0, r1, c1) in _bottom_rects(cell_ok):
+            ba = bi(r0, c0)
+            bb = bi(r0, c1 + 1)
+            bc = bi(r1 + 1, c1 + 1)
+            bd = bi(r1 + 1, c0)
             faces.append((ba, bc, bb))
             faces.append((ba, bd, bc))
+    else:
+        # Curved / disc — keep per-pixel tessellation for top + bottom.
+        for y in range(h - 1):
+            for x in range(w - 1):
+                if not cell_ok[y, x]:
+                    continue
+                a, b = ti(y, x), ti(y, x + 1)
+                c, d = ti(y + 1, x + 1), ti(y + 1, x)
+                faces.append((a, b, c))
+                faces.append((a, c, d))
+                ba, bb = bi(y, x), bi(y, x + 1)
+                bc, bd = bi(y + 1, x + 1), bi(y + 1, x)
+                faces.append((ba, bc, bb))
+                faces.append((ba, bd, bc))
 
     # Side walls: any cell-edge where one neighbour is invalid produces
     # an external wall; any internal edge where neighbouring tops differ
@@ -457,6 +639,26 @@ def build_per_filament_slabs(
     return slabs
 
 
+def _compact_mesh(
+    vertices: np.ndarray,
+    faces: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Drop any vertex not referenced by `faces` and re-index. Greedy
+    meshing leaves hundreds of thousands of unused per-pixel vertices
+    in the grid — without this pass the 3MF would still be 5-10× larger
+    than necessary because every unused vertex still serialises as
+    `<vertex x=… y=… z=…/>` in the XML."""
+    if faces.shape[0] == 0:
+        return np.zeros((0, 3), dtype=vertices.dtype), faces
+    used = np.unique(faces.reshape(-1))
+    # Build the new-index lookup: a sparse map from old vertex id → new.
+    remap = np.full(vertices.shape[0], -1, dtype=np.int32)
+    remap[used] = np.arange(used.shape[0], dtype=np.int32)
+    new_vertices = vertices[used]
+    new_faces = remap[faces]
+    return new_vertices, new_faces
+
+
 def _mesh_to_3mf_object(
     obj_id: int,
     vertices: np.ndarray,
@@ -469,6 +671,10 @@ def _mesh_to_3mf_object(
     name and RGB hex. Uses standard `<metadatagroup>` (core spec) so
     ANY 3MF reader — including ForgeSlicer — can recover the colour
     without needing a vendor extension."""
+    # Drop unreferenced vertices before serialising — greedy meshing
+    # leaves most of the per-pixel vertex grid unused; without this
+    # pass the 3MF can be 5-10× larger than necessary.
+    vertices, faces = _compact_mesh(vertices, faces)
     parts: List[str] = [
         f'<object id="{obj_id}" type="model" name="{_xml_escape(filament_name)}">',
         '<metadatagroup>',
@@ -741,6 +947,8 @@ _RELS = (
 
 
 def _mesh_to_3mf_model(vertices: np.ndarray, faces: np.ndarray) -> str:
+    # Drop unreferenced vertices before serialising (see _compact_mesh).
+    vertices, faces = _compact_mesh(vertices, faces)
     parts: List[str] = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<model unit="millimeter" xml:lang="en-US" ',

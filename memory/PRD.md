@@ -929,6 +929,47 @@ indexing if your slicer pipeline needs it.
   70/70 passing** (was 66).
 - E2E verified by testing agent across all four flows.
 
+## Implemented (2026-02-27) — Greedy mesh decimation: 300×+ triangle reduction
+- **Problem**: A 120×120mm lithophane like the ForgeSlicer anvil logo produced
+  ~4M triangles in the 3MF (5 filament slabs × ~1M each). 99% of those
+  triangles tessellated coplanar regions where adjacent pixels had identical
+  z values — pure waste. 3MF file sizes hit ~9 MB and slicer 3D previews
+  became sluggish. Slicing G-code was unaffected (slicers do 2D plane
+  intersections), so this was purely a transport/UX issue, not a print
+  quality issue.
+- **Fix #1 — Greedy quad merging** (`exporters.py::_greedy_top_rects`,
+  `_bottom_rects`): for flat geometry, decompose the cell grid into
+  maximal rectangles of constant top-z (lossless). Each rectangle emits
+  ONE quad (2 triangles) instead of N. Applied to `_build_mesh` and
+  `_build_slab_mesh`. Curved/cylindrical/disc keep their per-cell
+  tessellation because curved surfaces don't share equal-z neighbours.
+- **Fix #2 — Flat-bottom 4-corner emission**: single-mesh exports for
+  flat geometry use 2 triangles (4 corners) for the bottom face instead
+  of the per-pixel grid. Slab exports use `_bottom_rects` for the same
+  win on slabs whose footprint is non-trivial.
+- **Fix #3 — Vertex compaction** (`_compact_mesh`): the per-pixel vertex
+  grid (512×512×2 = 524k verts) was being shipped wholesale in the 3MF
+  XML even though only a few hundred were referenced. `_compact_mesh`
+  drops unreferenced vertices and re-indexes faces before serialisation.
+  Applied to both `_mesh_to_3mf_object` (per-slab) and `_mesh_to_3mf_model`
+  (single-mesh fallback).
+- **Note on T-junctions**: greedy meshing can leave a vertex on the
+  interior of an adjacent rectangle's edge. Slicers (Bambu / Orca /
+  Prusa / Cura) slice via 2D plane intersections so T-junctions don't
+  affect the printed contours. We accept this tradeoff because the
+  target audience is 3D printing, not real-time rendering.
+- **Benchmark** on a synthetic ForgeSlicer-anvil 120×120×3mm @ 5 filaments:
+  | Metric | Before | After | Ratio |
+  | --- | --- | --- | --- |
+  | STL triangles | ~4M | 11,676 | **~340× fewer** |
+  | STL size | ~200 MB | 570 KB | **~360× smaller** |
+  | 3MF size | ~9 MB | 141 KB | **~64× smaller** |
+- **Tests**: 11 new pytests in `tests/test_greedy_mesh.py` covering
+  decomposition correctness (constant z → 1 rect, varying z → singletons,
+  mixed case), bounding-box preservation, slab triangle reduction,
+  export triangle count, disc mode unaffected, and vertex compaction.
+  **Full backend suite: 81/81 passing** (was 70).
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG
