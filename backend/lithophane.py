@@ -374,6 +374,7 @@ def _optimize_painting(
     layer_height_mm: float,
     relief: float,
     smoothing: float = 0.0,
+    frame_px: int = 0,
 ) -> "OptimizeResult":
     """Painting mode: each pixel shows the single filament colour nearest to
     its Lab target. No subtractive mixing; colour fidelity is bounded by the
@@ -383,6 +384,11 @@ def _optimize_painting(
     `smoothing` (0..1) controls a Lab-space median pre-pass that softens
     speckled filament-zone boundaries on continuous photographs. 0 = off
     (faithful but speckly); 1 = strong (radius ~5px on 512px image).
+
+    `frame_px` (>=0) draws an inset matboard frame `frame_px` pixels wide
+    around the painted region. The frame is rendered with the brightest
+    filament (top of the stack) at full thickness — the same look a real
+    matboard gives a framed photo. Pixels inside the frame are unchanged.
     """
     # Pre-pass: chromatic simplification via per-channel median in Lab.
     if smoothing > 0:
@@ -449,6 +455,29 @@ def _optimize_painting(
     fil_rgb = np.array([f.rgb for f in ordered])
     rendered = fil_rgb[nearest].reshape(arr.shape)
 
+    # Matboard frame: paint a `frame_px`-wide border around the print
+    # using the brightest filament at full stack height. We pick the
+    # top-of-stack filament because matboards are traditionally a light
+    # neutral (cream / white) and that's where bright filaments end up
+    # in the dark→light ordering above.
+    if frame_px > 0:
+        h_px, w_px = layer_map.shape
+        fp = min(frame_px, h_px // 2, w_px // 2)
+        if fp > 0:
+            # frame_idx points to the brightest filament in the ordered
+            # stack (highest L*) — that's the last entry since sorting
+            # was ascending by L*.
+            frame_idx = n - 1
+            frame_top = int(zone_end[frame_idx] - 1)
+            frame_rgb = fil_rgb[frame_idx]
+            mask = np.zeros((h_px, w_px), dtype=bool)
+            mask[:fp, :] = True
+            mask[-fp:, :] = True
+            mask[:, :fp] = True
+            mask[:, -fp:] = True
+            layer_map = np.where(mask, frame_top, layer_map).astype(np.int32)
+            rendered = np.where(mask[:, :, None], frame_rgb, rendered)
+
     # Build LUT-equivalent for downstream consumers (preview PNG helper etc).
     # In painting mode the "LUT" is just the palette repeated per zone layer;
     # a compact version suffices.
@@ -492,6 +521,8 @@ def optimize(
     render_mode: str = "lithophane",
     relief: float = 0.5,
     smoothing: float = 0.0,
+    frame_mm: float = 0.0,
+    frame_target_mm: float = 100.0,
 ) -> OptimizeResult:
     """Optimize a photograph into either a back-lit lithophane (subtractive
     Beer-Lambert) or a reflective painting (nearest-filament mapping).
@@ -522,9 +553,17 @@ def optimize(
     total_layers = max(1, int(round(total_thickness_mm / layer_height_mm)))
 
     if render_mode == "painting":
+        # Translate frame_mm to a pixel count using the down-sampled
+        # array's pixels-per-mm. `frame_target_mm` is the print's
+        # shorter usable side in mm — passed from server.py so the
+        # frame width on screen matches the printed dimensions.
+        frame_px = 0
+        if frame_mm > 0 and frame_target_mm > 0:
+            pixels_per_mm = min(arr.shape[:2]) / max(1.0, frame_target_mm)
+            frame_px = max(1, int(round(frame_mm * pixels_per_mm)))
         return _optimize_painting(
             arr, target_lab, base_palette, total_layers, layer_height_mm,
-            relief, smoothing,
+            relief, smoothing, frame_px,
         )
 
     # Always use one allocation (histogram-based on the user's palette).

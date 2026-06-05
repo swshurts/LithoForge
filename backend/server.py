@@ -108,6 +108,7 @@ class OptimizeIn(BaseModel):
     render_mode: Literal["lithophane", "painting"] = "lithophane"
     relief: float = 0.5              # painting mode only, 0..1
     smoothing: float = 0.0           # painting mode only — 0..1, softens speckle
+    frame_mm: float = 0.0            # painting mode only — matboard border width (mm)
     printer_id: str = "generic_orca"  # printer profile id from /api/printers
     license: str = ""                 # creator-declared license (free text or preset)
 
@@ -123,6 +124,12 @@ class OptimizeOut(BaseModel):
     filaments: List[Dict[str, Any]]
     swap_heights_mm: List[float]
     timeline: List[Dict[str, Any]]  # [{color, name, layers, height_mm}]
+    # Count of in-domain pixels whose heightmap resolved to zero layers.
+    # The Base-fill slider in the UI fills these with N base-filament
+    # layers on export so the print stays continuous — the count here
+    # lets the UI surface a "Voids: N pixels · filled by base" badge.
+    void_pixels: int = 0
+    in_domain_pixels: int = 0
 
 
 class StatusCheck(BaseModel):
@@ -279,6 +286,16 @@ async def optimize_endpoint(
     image = UPLOADS[body.image_id]
     filaments = _filaments_from_input(body.filaments)
 
+    # Frame width (matboard) is expressed in mm in the UI, but the
+    # painter works in image pixels — pass the print's shorter usable
+    # side so it can convert. Border (geo border) is excluded because
+    # the matboard is a print-visible bezel, not the slicer's print
+    # border.
+    usable_short = max(
+        1.0,
+        min(body.width_mm, body.height_mm) - 2 * body.border_mm,
+    )
+
     result = optimize(
         image=image,
         filaments=filaments,
@@ -290,6 +307,8 @@ async def optimize_endpoint(
         render_mode=body.render_mode,
         relief=body.relief,
         smoothing=body.smoothing,
+        frame_mm=body.frame_mm,
+        frame_target_mm=usable_short,
     )
 
     # Disc geometry: mask preview/heightmap to a circle so the user sees
@@ -311,6 +330,24 @@ async def optimize_endpoint(
     heightmap = base64.b64encode(
         layer_map_to_png_bytes(result.layer_map, result.total_layers)
     ).decode()
+
+    # Count zero-thickness pixels inside the print's actual footprint so
+    # the UI can surface them as "voids" alongside the Base-fill slider.
+    # For disc geometry, the mask above already zeroed out-of-circle
+    # pixels — re-derive that mask here so we only count voids that the
+    # exporter will actually try to print over.
+    import numpy as _np
+    lm = result.layer_map
+    if body.geometry == "disc":
+        h_px, w_px = lm.shape
+        yy, xx = _np.ogrid[:h_px, :w_px]
+        cy, cx = (h_px - 1) / 2.0, (w_px - 1) / 2.0
+        radius = min(h_px, w_px) / 2.0
+        in_domain = ((yy - cy) ** 2 + (xx - cx) ** 2) <= (radius * radius)
+    else:
+        in_domain = _np.ones(lm.shape, dtype=bool)
+    void_pixels = int(((lm == 0) & in_domain).sum())
+    in_domain_pixels = int(in_domain.sum())
 
     timeline = []
     z = 0.0
@@ -376,6 +413,8 @@ async def optimize_endpoint(
                    for f in result.filaments],
         swap_heights_mm=result.swap_heights_mm,
         timeline=timeline,
+        void_pixels=void_pixels,
+        in_domain_pixels=in_domain_pixels,
     )
 
 

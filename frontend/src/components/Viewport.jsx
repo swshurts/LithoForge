@@ -40,6 +40,7 @@ const ViewTabs = ({ active, setActive, hasResult }) => (
 
 export const Viewport = ({
   onFile,
+  onReplace,
   sourceUrl,
   result,
   loading,
@@ -56,6 +57,7 @@ export const Viewport = ({
   // State (not ref) so the Loupe component re-renders when the <img>
   // mounts. Using a ref would never trigger Loupe to subscribe.
   const [imgEl, setImgEl] = useState(null);
+  const replaceInputRef = useRef(null);
 
   useEffect(() => {
     if (result && view === "original") setView("preview");
@@ -110,6 +112,30 @@ export const Viewport = ({
         </div>
         <div className="flex items-center gap-3">
           <ViewTabs active={view} setActive={setView} hasResult={!!result} />
+          {onReplace && (
+            <>
+              <input
+                ref={replaceInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                data-testid="replace-photo-input"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) onReplace(f);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                onClick={() => replaceInputRef.current?.click()}
+                data-testid="replace-photo-btn"
+                title="Swap the photo without touching your palette, crop, or geometry"
+                className="font-mono text-[10px] uppercase tracking-[0.15em] text-zinc-500 hover:text-zinc-200 transition-colors duration-150"
+              >
+                ⇄ REPLACE
+              </button>
+            </>
+          )}
           <button
             onClick={onReset}
             data-testid="reset-btn"

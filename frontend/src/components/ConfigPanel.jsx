@@ -494,6 +494,28 @@ export const ConfigPanel = ({
             </Row>
           )}
 
+          {isPainting && (
+            <Row
+              label="Frame"
+              value={(config.frame_mm ?? 0).toFixed(1)}
+              unit="mm"
+              testid="row-frame"
+            >
+              <Slider
+                data-testid="frame-slider"
+                value={[config.frame_mm ?? 0]}
+                onValueChange={([v]) => update("frame_mm", v)}
+                min={0}
+                max={15}
+                step={0.5}
+                disabled={disabled}
+              />
+              <div className="font-mono text-[10px] text-zinc-600 mt-1">
+                Matboard bezel painted in the brightest filament · 0 = off.
+              </div>
+            </Row>
+          )}
+
           <div className="grid grid-cols-2 gap-3 pt-1">
             <div className="panel-muted p-3">
               <div className="text-[9px] uppercase tracking-[0.15em] text-zinc-500">

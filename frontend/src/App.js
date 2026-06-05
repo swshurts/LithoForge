@@ -32,6 +32,8 @@ const DEFAULT_CONFIG = {
   render_mode: "painting",
   relief: 0.5,
   smoothing: 0,
+  // Matboard frame width (mm) — painting mode only, 0 = off.
+  frame_mm: 0,
   printer_id: "generic_orca",
   // Minimum base-filament floor (layers) — fills any zero-thickness
   // voids in the heightmap so the 3MF has no holes. Range 1..5; the
@@ -102,6 +104,47 @@ export default function App() {
     } catch (e) {
       toast.error("Upload failed");
       setSourceUrl(null);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  /**
+   * Replace the source photo *without* discarding the current edits,
+   * palette, or geometry. The user keeps everything they've tuned and
+   * just swaps in a new image — useful when comparing two photos with
+   * the same filament set / crop box. The previous result preview is
+   * cleared because it's no longer in sync with the source image.
+   */
+  const handleReplaceFile = async (file) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file");
+      return;
+    }
+    setUploading(true);
+    setResult(null);
+    try {
+      const url = URL.createObjectURL(file);
+      setSourceUrl(url);
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => {
+        originalImgRef.current = img;
+        setOriginalImg(img);
+      };
+      img.onerror = () => {
+        // eslint-disable-next-line no-console
+        console.warn("Hidden image element failed to load on replace");
+      };
+      img.src = url;
+      const data = await uploadImage(file);
+      setImageId(data.image_id);
+      // Mark uploadedEdits as DEFAULT so ensureCurrentImageId triggers
+      // a re-upload with edits applied when the user generates next.
+      setUploadedEdits({ ...DEFAULT_EDITS });
+      toast.success(`Replaced with ${data.width}×${data.height} image · edits preserved`);
+    } catch (e) {
+      toast.error("Replace failed");
     } finally {
       setUploading(false);
     }
@@ -238,6 +281,7 @@ export default function App() {
       curve_radius_mm: req.curve_radius_mm ?? c.curve_radius_mm,
       render_mode: req.render_mode ?? c.render_mode,
       relief: req.relief ?? c.relief,
+      frame_mm: req.frame_mm ?? c.frame_mm,
     }));
     if (job.filaments?.length) {
       setFilaments(job.filaments);
@@ -256,6 +300,10 @@ export default function App() {
       filaments: job.filaments,
       swap_heights_mm: job.swap_heights_mm,
       timeline: job.timeline,
+      // Restored jobs don't carry void counts; default to 0 so the
+      // badge stays hidden.
+      void_pixels: job.void_pixels ?? 0,
+      in_domain_pixels: job.in_domain_pixels ?? 0,
     });
     // Reset source-image state so the viewport shows the restored render
     // (not a stale upload from the current session).
@@ -309,6 +357,7 @@ export default function App() {
   const viewportEl = (
     <Viewport
       onFile={handleFile}
+      onReplace={handleReplaceFile}
       sourceUrl={sourceUrl}
       result={result}
       loading={loading || uploading}

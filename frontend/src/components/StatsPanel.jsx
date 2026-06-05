@@ -352,8 +352,24 @@ export const StatsPanel = ({
       <div className="border-t border-zinc-800" />
 
       <div className="space-y-3">
-        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
-          Export
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
+            Export
+          </div>
+          {result && result.void_pixels > 0 && (
+            <div
+              data-testid="voids-badge"
+              title={`${result.void_pixels.toLocaleString()} pixel${
+                result.void_pixels === 1 ? "" : "s"
+              } resolved to 0 layers — the Base fill slider in the Geometry panel will print ${baseMinLayers ?? 2} layer${
+                (baseMinLayers ?? 2) === 1 ? "" : "s"
+              } of base filament under each, so the slice has no holes.`}
+              className="flex items-center gap-1 px-2 py-1 border border-amber-700/50 text-amber-200 font-mono text-[9px] uppercase tracking-[0.15em]"
+            >
+              <span className="w-1 h-1 rounded-full bg-amber-300 animate-pulse" />
+              Voids · {result.void_pixels.toLocaleString()} px → {baseMinLayers ?? 2}L base
+            </div>
+          )}
         </div>
         <div className="space-y-2">
           <DownloadButton

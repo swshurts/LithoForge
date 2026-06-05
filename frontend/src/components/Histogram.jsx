@@ -18,6 +18,13 @@ import React, { useEffect, useRef } from "react";
 
 const BINS = 64;
 
+const CHANNELS = [
+  { id: "lum", label: "L",   color: "#a1a1aa", alpha: 0.85 },
+  { id: "r",   label: "R",   color: "#ef4444", alpha: 0.55 },
+  { id: "g",   label: "G",   color: "#22c55e", alpha: 0.55 },
+  { id: "b",   label: "B",   color: "#3b82f6", alpha: 0.55 },
+];
+
 const applyEditsInPlace = (data, edits) => {
   // brightness: 100 = identity, 200 = ×2, 20 = ×0.2
   const briMul = edits.brightness / 100;
@@ -70,6 +77,9 @@ const computeBins = (imageData) => {
 export const Histogram = ({ image, edits }) => {
   const canvasRef = useRef(null);
   const offscreenRef = useRef(null);
+  const [visible, setVisible] = React.useState(() => ({
+    lum: true, r: true, g: true, b: true,
+  }));
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -143,10 +153,15 @@ export const Histogram = ({ image, edits }) => {
       }
     };
 
-    drawSeries(lum, "#a1a1aa", 0.85);
-    drawSeries(r, "#ef4444", 0.45);
-    drawSeries(g, "#22c55e", 0.45);
-    drawSeries(b, "#3b82f6", 0.45);
+    const series = { lum, r, g, b };
+    // Draw lum LAST so its grey overlay sits on top of the colour
+    // channels (matches Photoshop / Lightroom convention).
+    const drawOrder = ["r", "g", "b", "lum"];
+    for (const id of drawOrder) {
+      if (!visible[id]) continue;
+      const ch = CHANNELS.find((c) => c.id === id);
+      drawSeries(series[id], ch.color, ch.alpha);
+    }
     ctx.globalAlpha = 1;
 
     // Clipping markers — strong shadow / highlight clipping warnings.
@@ -161,7 +176,7 @@ export const Histogram = ({ image, edits }) => {
       ctx.fillStyle = "#facc15";
       ctx.fillRect(cssW - 4, cssH - 2, 4, 2);
     }
-  }, [image, edits]);
+  }, [image, edits, visible]);
 
   if (!image) return null;
   return (
@@ -170,9 +185,28 @@ export const Histogram = ({ image, edits }) => {
         <span className="font-mono text-[9px] uppercase tracking-[0.15em] text-zinc-500">
           Histogram
         </span>
-        <span className="font-mono text-[9px] text-zinc-600">
-          R · G · B · Luma
-        </span>
+        <div className="flex items-center gap-1" data-testid="histogram-channel-toggles">
+          {CHANNELS.map((ch) => (
+            <button
+              key={ch.id}
+              type="button"
+              onClick={() =>
+                setVisible((v) => ({ ...v, [ch.id]: !v[ch.id] }))
+              }
+              data-testid={`histogram-toggle-${ch.id}`}
+              aria-pressed={visible[ch.id]}
+              title={`${visible[ch.id] ? "Hide" : "Show"} ${ch.id.toUpperCase()} channel`}
+              className={`w-5 h-5 flex items-center justify-center font-mono text-[9px] font-bold border transition-colors ${
+                visible[ch.id]
+                  ? "border-zinc-500 text-zinc-100"
+                  : "border-zinc-800 text-zinc-600 hover:border-zinc-700 hover:text-zinc-400"
+              }`}
+              style={visible[ch.id] ? { color: ch.color, borderColor: ch.color } : undefined}
+            >
+              {ch.label}
+            </button>
+          ))}
+        </div>
       </div>
       <canvas
         ref={canvasRef}

@@ -1,0 +1,38 @@
+{
+  "summary": "Round 5 — P2 batch (c/d/e/f) full verification. Backend pytest: 70/70 passing (incl. 4 new tests in tests/test_painting_frame.py). Backend curl: POST /api/optimize returns void_pixels + in_domain_pixels as ints; with a white-top/blue-bottom 256×256 image, lithophane→void_pixels=32768/65536; painting+frame_mm=10 returns 200 with full OptimizeOut. Frontend: all four features behave per spec.\n(c) Replace photo: data-testid='replace-photo-btn' visible after upload, clicking it triggers data-testid='replace-photo-input', replacing preserves the 8 filaments + slider values, and a Sonner toast 'Replaced with 300×300 image · edits preserved' is shown.\n(d) Histogram channel toggles: data-testid='histogram' renders 4 toggles (lum/r/g/b) all aria-pressed='true' initially. Toggling R off sets only its aria-pressed='false' (lum/g/b stay true); re-clicking restores it.\n(e) Frame slider: data-testid='row-frame' + data-testid='frame-slider' present in PAINTING (default); after switching to LITHOPHANE the row is removed entirely.\n(f) Voids badge: after Generate on a high-white image, data-testid='voids-badge' renders 'Voids · 32,768 px → 2L base' with a descriptive title attribute. Moving the Base-fill shadcn slider (role='slider' inside data-testid='row-base-min-layers') from 2 → 5 updates the badge to 'Voids · 32,768 px → 5L base' in real time. Clicking the badge is a no-op (badge remains).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_painting_frame.py",
+    "/app/backend/tests/test_lithophane_api.py",
+    "/app/backend/tests/test_quota.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py @app.on_event('shutdown') is still deprecated (carry-over from earlier iterations); migrate to FastAPI lifespan handler.",
+    "server.py optimize_endpoint: the inline `import numpy as _np` is done twice (once in the disc-mask block at L318 and again at L339 for void counting). Move the import to the module top and reuse to keep the hot path clean.",
+    "server.py optimize_endpoint also recomputes the disc mask twice (once to mask preview at L320-325 and again at L341-346 to count voids). Extract a helper `_disc_mask(shape) -> ndarray` to remove the duplication and the second numpy.ogrid pass.",
+    "voids-badge has a `title=` tooltip but no aria-label. Native title hover-text is fine for desktop but screen readers won't announce it consistently. Consider adding aria-label with the same content.",
+    "Histogram channel toggles default all-on is correct per spec, but the L/R/G/B button labels in the screenshot are very low-contrast on the dark histogram canvas — recommend bumping the toggle-on background contrast or adding a subtle outline so users can tell at a glance which channels are active.",
+    "The Base-fill control is rendered via shadcn <Slider> (role='slider' SPAN), which means programmatic test value setters via input[type=range] don't work. Consider adding a hidden <input type=range data-testid='base-fill-input'> mirror for testability, or document the keyboard ArrowRight/ArrowLeft pattern in a comment near the component."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (70/70 pytest)",
+    "frontend": "100% — all 4 P2 features verified end-to-end through the studio UI"
+  },
+  "test_credentials": "Anonymous (guest) flow was sufficient for all four P2 features. Pytest uses the seeded test-user-pytest pro session from conftest.py.",
+  "seed_data_creation": "None for this round — all tests used the unauthenticated /studio path and in-memory UPLOADS/JOBS.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Pytest entry: `cd /app/backend && python -m pytest tests/ -q` (70 tests, ~26s). New file is tests/test_painting_frame.py covering void_pixels reporting, disc in_domain pixel masking, painting frame monochrome ring, and frame_mm=0 no-op. The Base-fill control inside data-testid='row-base-min-layers' is a shadcn <Slider> exposed as role='slider' SPAN with aria-valuenow, NOT an input[type=range]. To change it programmatically: `await page.query_selector(\"[data-testid='row-base-min-layers'] [role='slider']\").focus(); await page.keyboard.press('ArrowRight')`. The Histogram toggle aria-pressed attributes update synchronously. The replace flow keeps filaments + crop + sliders, only the rendered output (and the previewed source image) change — exactly what the spec asks for. To force voids for badge testing, upload a high-white image (white sky / sunset) and Generate in LITHOPHANE mode; PAINTING with a non-white image will often return void_pixels=0 and the badge correctly stays absent.",
+  "rca of the issue": "No bugs found. The only tooling friction was that the Base-fill slider is a shadcn role='slider' SPAN rather than a real input[type=range], so the standard nativeSetter pattern for triggering React onChange does not work — keyboard arrows on the focused span do. Documented in the context_for_next_testing_agent note."
+}
