@@ -166,25 +166,28 @@ export const sendToForgeSlicer = ({
     };
 
     const onMessage = (e) => {
-      // Verbose handshake-window logging: dump EVERY incoming message
-      // until we settle. This is the only way to tell (3) "ForgeSlicer
-      // never posted anything" apart from (2) "ForgeSlicer posted with
-      // a shape we don't recognise". Both cases look identical without
-      // this log.
-      try {
-        // eslint-disable-next-line no-console
-        console.info(
-          `[LithoForge] inbound message origin=${e.origin} data=`,
-          e.data,
-        );
-      } catch { /* noop */ }
+      // IMPORTANT — do NOT log every inbound message here. The Emergent
+      // preview-logger (emergent-main.js) postMessages every console
+      // call back to the same window, so an unconditional
+      // `console.info(...)` in this handler creates an infinite feedback
+      // loop: log → preview-logger forwards → we log it → ... until
+      // Chrome OOMs the render process (which is exactly what crashed
+      // the tab during the previous diagnostics round). We restrict
+      // logging to messages from the ForgeSlicer origin so the loop
+      // can't form.
+      //
       // Strict origin check — never trust a postMessage without it.
-      // Warn (instead of silently dropping) when an unexpected origin
-      // pings us; this is invaluable when diagnosing a stuck handoff
-      // because it tells us whether ForgeSlicer actually reached us
-      // and from which origin (e.g. www. vs apex, staging vs prod).
       if (e.origin !== FORGESLICER_ORIGIN) {
-        if (e.data && typeof e.data === "object" && typeof e.data.type === "string" && e.data.type.startsWith("forgeslicer:")) {
+        // Only warn for known forgeslicer:* types from wrong origins
+        // (apex vs www, staging vs prod) — anything else is unrelated
+        // app traffic (preview-logger, react-devtools, etc.) and must
+        // not be logged.
+        if (
+          e.data &&
+          typeof e.data === "object" &&
+          typeof e.data.type === "string" &&
+          e.data.type.startsWith("forgeslicer:")
+        ) {
           // eslint-disable-next-line no-console
           console.warn(
             `[LithoForge] dropped ${e.data.type} from non-allowlisted origin ${e.origin} (expected ${FORGESLICER_ORIGIN})`,
@@ -192,10 +195,14 @@ export const sendToForgeSlicer = ({
         }
         return;
       }
+      // Same origin as ForgeSlicer — safe to log (ForgeSlicer doesn't
+      // run our preview-logger, so no feedback loop here).
+      // eslint-disable-next-line no-console
+      console.info(
+        `[LithoForge] inbound from ForgeSlicer data=`,
+        e.data,
+      );
       if (e.data?.type !== "forgeslicer:handoff:ready") {
-        // Origin matched but message shape didn't — log so we can spot
-        // contract mismatches (e.g. ForgeSlicer changed its message
-        // type/name without us noticing).
         // eslint-disable-next-line no-console
         console.warn(
           `[LithoForge] received message from ForgeSlicer origin but type !== 'forgeslicer:handoff:ready' — got:`,
