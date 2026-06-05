@@ -790,30 +790,39 @@ XML, iterate `<object>` elements — each has a `<metadatagroup>` with
 indexing if your slicer pipeline needs it.
 
 ## Implemented (2026-02-27) — ForgeSlicer handoff diagnostics + env-configurable origin
-- [x] **Root cause of "Handoff didn't complete"**: ForgeSlicer's `ALLOWED_OPENER_ORIGINS`
-      didn't include the LithoForge preview URL
-      (`https://color-match-slicer.preview.emergentagent.com`), so it silently dropped
-      our `forgeslicer:handoff:model` postMessage and timed out at 90 s.
-- [x] **LithoForge-side diagnostics added** to `src/lib/forgeslicerHandoff.js`:
-      - `console.info` on handoff start, logging both our `window.location.origin`
-        and the target ForgeSlicer origin (the exact string to paste into ForgeSlicer's
-        allowlist).
-      - `console.warn` (instead of silent early-return) when we drop an inbound
-        `forgeslicer:*` message whose origin doesn't match our expected one — so
-        the "wrong ForgeSlicer origin" failure mode (apex vs www, prod vs staging)
-        is now visible in the console.
-      - Timeout warning now reports `readyReceived` / `modelBuffered` state so
-        users can tell whether ForgeSlicer never pinged us vs ForgeSlicer received
-        the ping but dropped our payload.
+- [x] **Root cause of "Handoff didn't complete" (revised)**: ForgeSlicer's deployed
+      bundle (`https://forgeslicer.com/static/js/main.0f301007.js`) only listens
+      for `forgeslicer:handoff:stl` and silently drops any other message type.
+      When LithoForge introduced 3MF support it began posting
+      `forgeslicer:handoff:model`, which ForgeSlicer's listener short-circuited
+      at `if (t.type !== "forgeslicer:handoff:stl") return;`. ForgeSlicer's
+      allowlist already includes the preview origin, so that part was a red
+      herring. ForgeSlicer's STL handler's filename validator
+      (`/\.(stl|obj|3mf|glb)$/i`) already accepts `.3mf` extensions, so the
+      fix is simply to keep posting under the legacy `:stl` message type with
+      the `.3mf` filename + bytes.
+- [x] **Fix applied to `src/lib/forgeslicerHandoff.js`**: `messageType` is now
+      hard-coded to `"forgeslicer:handoff:stl"` regardless of format. The
+      payload still carries `format: "3mf"` metadata for forward-compat once
+      ForgeSlicer ships an explicit `:model` handler. Comment in the file
+      points to the exact ForgeSlicer build hash that was reverse-engineered.
+- [x] **LithoForge-side diagnostics added**:
+      - `console.info` on handoff start, logging our `window.location.origin`
+        and the target ForgeSlicer origin (the exact string to paste into
+        ForgeSlicer's allowlist if it ever changes).
+      - `console.info` logging every inbound `message` event during the
+        handshake window so we can spot ForgeSlicer changing its `ready`
+        payload shape without us noticing.
+      - `console.warn` when we receive a message from the right ForgeSlicer
+        origin but with an unexpected `type` (contract mismatch).
+      - `console.warn` when the 90 s timer expires, reporting
+        `readyReceived` / `modelBuffered` state and a tailored hint.
 - [x] **Env-configurable target**: `REACT_APP_FORGESLICER_ORIGIN` +
       `REACT_APP_FORGESLICER_HANDOFF_URL` override the hard-coded
       `https://forgeslicer.com` / `/handoff` for staging/dev pointing.
-- [x] **New Jest test**: asserts wrong-origin `ready` messages emit a `console.warn`
-      containing the offending origin and never trigger `postMessage`. 4/4 Jest
-      tests passing.
-- [x] **Action required on ForgeSlicer side** (out-of-repo): add
-      `https://color-match-slicer.preview.emergentagent.com` to ForgeSlicer's
-      opener-origin allowlist. Once added, the preview build's handoff will work.
+- [x] **Updated Jest test** asserts the outbound message type stays
+      `forgeslicer:handoff:stl` (the contract ForgeSlicer's current build
+      understands). 4/4 Jest tests passing.
 
 ## Backlog
 ### P1

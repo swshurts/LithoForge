@@ -93,10 +93,15 @@ export const sendToForgeSlicer = ({
     // stl is flat geometry).
     const ext = (filename || url || "").toLowerCase().split(".").pop();
     const format = ext === "3mf" ? "3mf" : "stl";
-    const messageType =
-      format === "3mf"
-        ? "forgeslicer:handoff:model"
-        : "forgeslicer:handoff:stl"; // legacy
+    // The currently-deployed ForgeSlicer build (verified against
+    // https://forgeslicer.com/static/js/main.0f301007.js on 2026-02-27)
+    // only listens for `forgeslicer:handoff:stl` and silently drops
+    // any other type. Its STL handler already validates the filename
+    // extension against /\.(stl|obj|3mf|glb)$/i, so passing a `.3mf`
+    // payload under the legacy `:stl` type Just Works. Once ForgeSlicer
+    // ships explicit `:model` support, switch back to:
+    //   format === "3mf" ? "forgeslicer:handoff:model" : "forgeslicer:handoff:stl"
+    const messageType = "forgeslicer:handoff:stl";
 
     // Surface our own origin up front — if ForgeSlicer drops our
     // `model` message because we're not on its allowlist, this is the
@@ -161,6 +166,18 @@ export const sendToForgeSlicer = ({
     };
 
     const onMessage = (e) => {
+      // Verbose handshake-window logging: dump EVERY incoming message
+      // until we settle. This is the only way to tell (3) "ForgeSlicer
+      // never posted anything" apart from (2) "ForgeSlicer posted with
+      // a shape we don't recognise". Both cases look identical without
+      // this log.
+      try {
+        // eslint-disable-next-line no-console
+        console.info(
+          `[LithoForge] inbound message origin=${e.origin} data=`,
+          e.data,
+        );
+      } catch { /* noop */ }
       // Strict origin check — never trust a postMessage without it.
       // Warn (instead of silently dropping) when an unexpected origin
       // pings us; this is invaluable when diagnosing a stuck handoff
@@ -175,7 +192,17 @@ export const sendToForgeSlicer = ({
         }
         return;
       }
-      if (e.data?.type !== "forgeslicer:handoff:ready") return;
+      if (e.data?.type !== "forgeslicer:handoff:ready") {
+        // Origin matched but message shape didn't — log so we can spot
+        // contract mismatches (e.g. ForgeSlicer changed its message
+        // type/name without us noticing).
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[LithoForge] received message from ForgeSlicer origin but type !== 'forgeslicer:handoff:ready' — got:`,
+          e.data,
+        );
+        return;
+      }
       readyReceived = true;
       if (modelBuffer) post();
     };

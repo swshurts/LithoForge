@@ -66,7 +66,7 @@ describe("sendToForgeSlicer", () => {
     expect(fakePopup.postMessage).toHaveBeenCalledTimes(1);
     const [msg, origin] = fakePopup.postMessage.mock.calls[0];
     expect(origin).toBe(FORGESLICER_ORIGIN);
-    expect(msg.type).toBe("forgeslicer:handoff:model");
+    expect(msg.type).toBe("forgeslicer:handoff:stl");
     expect(msg.format).toBe("3mf");
     expect(msg.filename).toBe("test.3mf");
     expect(msg.sourceLabel).toBe("LithoForge");
