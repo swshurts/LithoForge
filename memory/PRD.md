@@ -890,6 +890,45 @@ indexing if your slicer pipeline needs it.
       (was 63). Live curl confirms 422 on bad input, 404 on valid input
       with no job.
 
+## Implemented (2026-02-27) — P2 batch: Replace photo · Histogram toggles · Matboard frame · Voids badge
+
+### (c) Replace photo
+- New ⇄ REPLACE button in the Viewport top bar (next to "← NEW IMAGE").
+- `handleReplaceFile` in `App.js` swaps `sourceUrl` + `imageId` without
+  touching `edits`, `filaments`, `config` (geometry, dimensions, base-fill,
+  etc). Clears `result` since it's no longer in sync with the new source.
+- Toast: "Replaced with WxH image · edits preserved".
+
+### (d) Histogram channel toggles
+- 4 toggle buttons (L / R / G / B) above the histogram canvas
+  (`Histogram.jsx`). Each independently shows/hides its channel via
+  `aria-pressed`. Luma drawn last so its grey overlay sits on top of the
+  colour channels (Photoshop convention).
+
+### (e) Auto-frame matboard
+- Backend (`lithophane.py`): `_optimize_painting` takes `frame_px`; the
+  outer N-pixel ring is painted with the brightest filament at full
+  stack height. Translated from `frame_mm` using the print's shorter
+  usable side (passed from `server.py`).
+- OptimizeIn now has `frame_mm` (default 0). Painting-mode only.
+- New "Frame" slider in ConfigPanel — 0..15 mm step 0.5, hidden when
+  not in Painting mode.
+
+### (f) Voids badge
+- `OptimizeOut` returns `void_pixels` (zero-layer pixels) and
+  `in_domain_pixels` (mask-aware: full rect for rect/flat/curved,
+  inscribed circle for disc).
+- StatsPanel renders an amber badge "Voids · N px → ML base" ONLY when
+  `void_pixels > 0`. Updates live as the Base-fill slider changes.
+  Hover tooltip explains what voids are.
+
+### Tests
+- 4 new pytests in `tests/test_painting_frame.py`: void count returned,
+  disc in-domain mask excludes outside circle, frame paints outer ring
+  monochrome, `frame_mm=0` is a no-op vs no-arg. **Full backend suite:
+  70/70 passing** (was 66).
+- E2E verified by testing agent across all four flows.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG
