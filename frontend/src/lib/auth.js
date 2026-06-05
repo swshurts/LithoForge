@@ -76,8 +76,14 @@ export const AuthProvider = ({ children }) => {
 };
 
 /** Handles the OAuth return fragment. Mount above the app so it runs
- *  before any /auth/me checks. */
+ *  before any /auth/me checks. After a successful session exchange we
+ *  refresh the AuthProvider so the UI immediately reflects the signed-
+ *  in state without requiring a full page reload (the previous
+ *  behaviour, which was masked when `/` was the studio because the
+ *  studio's first network call would surface the user — now that `/`
+ *  is the static landing page nothing was poking auth state). */
 export const AuthCallbackHandler = ({ onComplete }) => {
+  const { refresh } = useAuth();
   const [processing, setProcessing] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -112,6 +118,9 @@ export const AuthCallbackHandler = ({ onComplete }) => {
           { session_id: sessionId },
           { withCredentials: true, timeout: 10000 }
         );
+        // Pull the just-set cookie into the AuthProvider so the UI
+        // updates without a page reload.
+        await refresh();
       } catch {
         /* fall through — user will see anonymous state */
       } finally {
@@ -122,7 +131,7 @@ export const AuthCallbackHandler = ({ onComplete }) => {
         if (onComplete) onComplete();
       }
     })();
-  }, [processing, onComplete]);
+  }, [processing, onComplete, refresh]);
 
   if (!processing) return null;
   return (
