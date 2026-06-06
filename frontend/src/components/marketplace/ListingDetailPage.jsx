@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { Layers, ShoppingBag, User as UserIcon } from "lucide-react";
 import { MarketplaceHeader } from "./MarketplaceHeader";
 import { PurchaseDialog } from "./PurchaseDialog";
+import { Lithophane3DPreview } from "./Lithophane3DPreview";
 import { LibraryMatchPanel } from "../LibraryMatchPanel";
 import { getListingDetail } from "../../lib/api";
 
@@ -12,6 +13,9 @@ export const ListingDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Default to the rendered colour preview because it shows the
+  // colour-accurate result; users can flip to 3D to inspect relief.
+  const [previewMode, setPreviewMode] = useState("image");
 
   useEffect(() => {
     let cancelled = false;
@@ -47,16 +51,49 @@ export const ListingDetailPage = () => {
           <div className="grid lg:grid-cols-[1.4fr_1fr] gap-10">
             {/* Preview */}
             <div className="border border-zinc-800 bg-zinc-900 overflow-hidden">
-              {listing.preview_png_base64 ? (
-                <img
-                  src={`data:image/png;base64,${listing.preview_png_base64}`}
-                  alt={listing.title}
-                  className="w-full h-auto block"
-                  draggable={false}
-                  data-testid="listing-preview"
-                />
+              <div className="flex items-center border-b border-zinc-800 bg-zinc-950">
+                <button
+                  data-testid="preview-tab-image"
+                  onClick={() => setPreviewMode("image")}
+                  aria-pressed={previewMode === "image"}
+                  className={`px-4 py-2 font-mono text-[10px] uppercase tracking-[0.2em] transition-colors ${
+                    previewMode === "image"
+                      ? "text-zinc-100 border-b border-zinc-100 -mb-px"
+                      : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  Render
+                </button>
+                <button
+                  data-testid="preview-tab-3d"
+                  onClick={() => setPreviewMode("3d")}
+                  aria-pressed={previewMode === "3d"}
+                  className={`px-4 py-2 font-mono text-[10px] uppercase tracking-[0.2em] transition-colors ${
+                    previewMode === "3d"
+                      ? "text-zinc-100 border-b border-zinc-100 -mb-px"
+                      : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  3D
+                </button>
+                <span className="ml-auto pr-4 font-mono text-[9px] text-zinc-600 uppercase tracking-[0.18em]">
+                  {previewMode === "3d" ? "Low-res · IP-safe" : "Slicer colour render"}
+                </span>
+              </div>
+              {previewMode === "image" ? (
+                listing.preview_png_base64 ? (
+                  <img
+                    src={`data:image/png;base64,${listing.preview_png_base64}`}
+                    alt={listing.title}
+                    className="w-full h-auto block"
+                    draggable={false}
+                    data-testid="listing-preview"
+                  />
+                ) : (
+                  <div className="aspect-square" />
+                )
               ) : (
-                <div className="aspect-square" />
+                <Lithophane3DPreview jobId={listing.job_id} height={480} />
               )}
             </div>
 

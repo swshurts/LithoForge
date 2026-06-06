@@ -9,12 +9,21 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+import numpy as np
+from fastapi import APIRouter, Depends, HTTPException, Response
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field
 
 # Platform's cut of every sale, applied at Stripe checkout in Phase B.
 PLATFORM_FEE_PCT = 6.0
+
+# Preview-mesh downsample target. We downsample the source heightmap to
+# this max dimension before meshing so the resulting STL is unusable as
+# a print substitute for the paid product — the buyer can spin it
+# around in 3D but can't sneak around the paywall by saving the
+# preview. 96 px gives a recognisable silhouette while butchering
+# small-feature fidelity (text, fine relief).
+_PREVIEW_MAX_DIM_PX = 96
 
 
 class ListingIn(BaseModel):
@@ -189,6 +198,77 @@ def build_marketplace_router(
                  "td": float(f.get("td", 1.0))}
                 for f in (job.get("filaments") or [])
             ],
+        )
+
+    @router.get("/marketplace/{job_id}/preview-mesh")
+    async def preview_mesh(job_id: str) -> Response:
+        """Return a downsampled, IP-safe STL for in-browser 3D preview.
+
+        Strategy: load the job's stored layer_map, average-pool it to
+        a max dimension of 96px, then mesh it with greedy decimation.
+        The result is recognisable enough to spin around in 3D but
+        ~30× lower resolution than the paid product — useless as a
+        print substitute. Returned as binary STL because STLLoader is
+        a one-liner in three.js (vs unzipping + XML-parsing a 3MF).
+
+        Public endpoint — no auth, no purchase token. The downsampling
+        is the entire IP-protection mechanism here.
+        """
+        from jobs_history import _layer_map_from_b64  # local import
+        from exporters import GeometrySpec, _build_mesh, write_stl_binary
+
+        stored = await db.jobs.find_one(
+            {"job_id": job_id, "listing.visibility": "listed"},
+            {"_id": 0, "layer_map_b64": 1, "layer_height_mm": 1, "request": 1},
+        )
+        if not stored:
+            raise HTTPException(404, "Listing not found")
+
+        layer_map = _layer_map_from_b64(stored["layer_map_b64"])
+        layer_height_mm = float(stored["layer_height_mm"])
+        req = stored.get("request") or {}
+
+        # Average-pool layer_map down to <= _PREVIEW_MAX_DIM_PX on the
+        # longer side. Average-pool (not nearest-neighbour) so small
+        # features blur out — keeps the silhouette but kills fine relief.
+        h, w = layer_map.shape
+        scale = max(h, w) / _PREVIEW_MAX_DIM_PX
+        if scale > 1.0:
+            new_h = max(2, int(round(h / scale)))
+            new_w = max(2, int(round(w / scale)))
+            # Box-average via crop + reshape + mean.
+            crop_h = (h // new_h) * new_h
+            crop_w = (w // new_w) * new_w
+            lm = layer_map[:crop_h, :crop_w].astype(np.float32)
+            lm = lm.reshape(new_h, crop_h // new_h, new_w, crop_w // new_w).mean(axis=(1, 3))
+            # Re-quantise to integer layer counts so the mesh stays
+            # step-shaped (smooth-averaged heights would mush the
+            # lithophane look).
+            layer_map_ds = np.round(lm).astype(np.int32)
+        else:
+            layer_map_ds = layer_map.astype(np.int32)
+
+        geo = GeometrySpec(
+            mode=req.get("geometry") or "flat",
+            width_mm=float(req.get("width_mm", 100.0)),
+            height_mm=float(req.get("height_mm", 100.0)),
+            border_mm=float(req.get("border_mm", 0.0)),
+            curve_radius_mm=float(req.get("curve_radius_mm", 80.0)),
+            dome_mm=float(req.get("dome_mm", 0.0)),
+        )
+        vertices, faces = _build_mesh(
+            layer_map_ds, layer_height_mm, geo, base_min_layers=1
+        )
+        stl_bytes = write_stl_binary(vertices, faces)
+        return Response(
+            content=stl_bytes,
+            media_type="model/stl",
+            headers={
+                # Aggressive cache because the preview never changes
+                # once a listing is published.
+                "Cache-Control": "public, max-age=86400, immutable",
+                "Content-Disposition": f"inline; filename=preview_{job_id}.stl",
+            },
         )
 
     @router.get("/creators/{user_id}", response_model=CreatorProfile)

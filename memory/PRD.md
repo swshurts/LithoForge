@@ -970,6 +970,36 @@ indexing if your slicer pipeline needs it.
   export triangle count, disc mode unaffected, and vertex compaction.
   **Full backend suite: 81/81 passing** (was 70).
 
+## Implemented (2026-02-27) — In-browser 3D preview on Marketplace listings
+- **Backend (`marketplace.py`)**: new public endpoint
+  `GET /api/marketplace/{job_id}/preview-mesh` returns a binary STL
+  generated from a heavily downsampled (96px max-dim, box-averaged + integer-
+  re-quantised) copy of the job's layer_map. The downsample is the IP-
+  protection mechanism — the preview is recognisable enough to spin around
+  but its dimensions / resolution make it useless as a print substitute. The
+  endpoint sets `Cache-Control: public, max-age=86400, immutable` so a single
+  visit caches the file across sessions (the Cloudflare edge currently
+  overrides this in the preview env, but the directive is correct).
+  Returns 404 for both nonexistent and unlisted jobs — same response so
+  unlisted jobs don't leak their existence.
+- **Frontend (`Lithophane3DPreview.jsx`)**: lean three.js component (no
+  R3F / drei) that fetches the preview STL, parses it with a manual ~30-line
+  binary-STL reader, centres + auto-fits the camera, and renders with a
+  custom spherical-orbit controller (pointer-drag to rotate, wheel to zoom,
+  auto-rotate until user grabs). Cleans up the WebGL context on unmount.
+- **Frontend (`ListingDetailPage.jsx`)**: preview area now has two tabs —
+  **Render** (existing colour PNG, default) and **3D** (the new three.js
+  view). A "LOW-RES · IP-SAFE" / "Slicer colour render" caption shows the
+  current mode. Defaults to Render because the colour preview is what
+  buyers come to see; 3D is the relief inspector.
+- **Dep added**: `three@0.184.0` (~250 KB gzipped). Did NOT add R3F or
+  drei — overkill for one component.
+- **Tests**: 3 new pytests in `tests/test_preview_mesh.py` — 404 on
+  unknown listing, 404 on unlisted job (no leak), correct binary-STL
+  format + downsampled triangle count. **Full backend suite: 84/84
+  passing** (was 81). Frontend smoke test confirmed via Playwright:
+  preview tab toggles, 3D component mounts, mesh loads, no error state.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG
