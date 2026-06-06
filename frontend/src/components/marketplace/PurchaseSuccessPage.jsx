@@ -24,9 +24,13 @@ export const PurchaseSuccessPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const sessionId = searchParams.get("session_id");
+  // Braintree's Drop-in path returns the download_token synchronously
+  // (no Stripe-style async settlement), so we accept a pre-baked
+  // `&token=...` and skip the polling entirely when present.
+  const presetToken = searchParams.get("token");
 
-  const [status, setStatus] = useState("checking"); // checking|paid|expired|error
-  const [token, setToken] = useState(null);
+  const [status, setStatus] = useState(presetToken ? "paid" : "checking");
+  const [token, setToken] = useState(presetToken || null);
   const [listing, setListing] = useState(null);
   const [error, setError] = useState("");
   const [buyerPrinter, setBuyerPrinter] = useState(null); // null = use creator's
@@ -34,10 +38,16 @@ export const PurchaseSuccessPage = () => {
   const pollsRef = useRef(0);
 
   useEffect(() => {
+    // Braintree path supplies the download token in the URL — no polling.
+    if (presetToken) return undefined;
     if (!sessionId) {
-      setStatus("error");
-      setError("Missing session id");
-      return;
+      // Defer via microtask so the state update doesn't fire synchronously
+      // inside the effect (eslint react-hooks/set-state-in-effect).
+      queueMicrotask(() => {
+        setStatus("error");
+        setError("Missing session id");
+      });
+      return undefined;
     }
     let cancelled = false;
 
@@ -80,7 +90,7 @@ export const PurchaseSuccessPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, presetToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,8 +110,8 @@ export const PurchaseSuccessPage = () => {
   // Whenever the buyer changes printer, check if the design fits their bed.
   useEffect(() => {
     if (!buyerPrinter || !listing) {
-      setBedFit(null);
-      return;
+      queueMicrotask(() => setBedFit(null));
+      return undefined;
     }
     let cancelled = false;
     (async () => {
@@ -131,10 +141,10 @@ export const PurchaseSuccessPage = () => {
         {status === "checking" && (
           <div className="text-center space-y-3" data-testid="status-checking">
             <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500 animate-pulse">
-              Confirming payment with Stripe…
+              Confirming your payment…
             </div>
             <div className="font-mono text-[10px] text-zinc-600">
-              Please don't close this tab.
+              Please don&apos;t close this tab.
             </div>
           </div>
         )}
@@ -147,7 +157,7 @@ export const PurchaseSuccessPage = () => {
                 Payment received
               </h1>
               <div className="font-mono text-[11px] text-zinc-500">
-                We've emailed your download link as backup. Below are the
+                We&apos;ve emailed your download link as backup. Below are the
                 files ready to print.
               </div>
             </div>
@@ -196,16 +206,16 @@ export const PurchaseSuccessPage = () => {
                   <div className="leading-relaxed">
                     Warning: this design is {listing.width_mm}×{listing.height_mm}mm
                     but the {bedFit.printer_name} bed is only{" "}
-                    {bedFit.bed_x_mm}×{bedFit.bed_y_mm}mm. You'll need
+                    {bedFit.bed_x_mm}×{bedFit.bed_y_mm}mm. You&apos;ll need
                     to scale it down in your slicer.
                   </div>
                 </div>
               )}
               <div className="font-mono text-[9px] text-zinc-600 leading-relaxed">
-                Defaults to the creator's choice (
+                Defaults to the creator&apos;s choice (
                 {listing?.designed_for_printer || "generic FDM"}). Picking a
                 different printer regenerates the 3MF/STL with that
-                printer's auto-pause flavour (M600 vs AMS tool change).
+                printer&apos;s auto-pause flavour (M600 vs AMS tool change).
               </div>
             </div>
 

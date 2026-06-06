@@ -1000,6 +1000,43 @@ indexing if your slicer pipeline needs it.
   passing** (was 81). Frontend smoke test confirmed via Playwright:
   preview tab toggles, 3D component mounts, mesh loads, no error state.
 
+## Implemented (2026-02-27) — Marketplace payment swap: Stripe → Braintree
+- **Motivation**: Stripe's well-documented account-freeze risk for digital
+  goods marketplaces. Braintree (a PayPal subsidiary) offers comparable
+  fees / UX with a calmer account-stability reputation.
+- **Backend** (`marketplace_braintree.py`, new module): three endpoints —
+  `POST /api/marketplace/client-token` (issues Braintree Drop-in tokens —
+  public, anonymous-friendly), `POST /api/marketplace/{job_id}/checkout-bt`
+  (server-side `transaction.sale` with submit_for_settlement; reads price
+  from MongoDB to prevent client-side tampering; mints download_token
+  synchronously on success; persists txn to `payment_transactions`
+  collection with `provider=braintree`), and `GET/POST /api/webhook/braintree`
+  (signed verification + parse for `TransactionSettled` and `DisputeOpened`).
+  Same `payment_transactions` schema as Stripe so download-token resolution
+  works unchanged.
+- **Frontend** (`PurchaseDialog.jsx`): replaced the Stripe-redirect dialog
+  with Braintree's Drop-in UI mounted inline. PCI-compliant iframe, never
+  see card data, supports Visa / Mastercard / Amex / Discover / JCB / UnionPay.
+  Submit button disabled until both email + Drop-in are ready. On success,
+  navigates to the existing success page with `&token=...` so no polling
+  is needed (`PurchaseSuccessPage.jsx` updated to accept the pre-baked
+  token).
+- **Env vars** added to `backend/.env`: `BRAINTREE_ENVIRONMENT=sandbox`,
+  `BRAINTREE_MERCHANT_ID`, `BRAINTREE_PUBLIC_KEY`, `BRAINTREE_PRIVATE_KEY`,
+  `PAYMENT_PROVIDER=braintree`. **Stripe code retained in repo** but
+  unwired — rollback is a one-line server.py change.
+- **Dependencies added**: `braintree==4.44.0` (Python SDK),
+  `braintree-web-drop-in@latest` (npm).
+- **Tests**: 6 new live-sandbox pytests in `tests/test_braintree.py`
+  exercising real Braintree calls — client-token issuance, 404 path,
+  successful sale via `fake-valid-nonce` (real $$ charged in sandbox),
+  decline path via `fake-processor-declined-visa-nonce`, webhook
+  verify echo, and webhook verify input validation. Sandbox
+  duplicate-detection bypassed via randomised prices. **Full backend
+  suite: 90/90 passing** (was 84).
+- **Smoke test**: Playwright confirmed the Drop-in iframe renders inside
+  the dialog with all expected card networks visible.
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

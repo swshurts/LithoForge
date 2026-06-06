@@ -1,21 +1,86 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ShoppingBag, X } from "lucide-react";
-import { createCheckoutSession, PLATFORM_FEE_PCT } from "../../lib/api";
+import dropin from "braintree-web-drop-in";
 
-/** Modal that collects buyer email + initiates Stripe Checkout.
+import { API, PLATFORM_FEE_PCT } from "../../lib/api";
+
+/**
+ * Braintree Drop-in purchase dialog (replaces the old Stripe-redirect
+ * version). Flow:
+ *   1. Mount → request a client_token from /api/marketplace/client-token
+ *   2. dropin.create({ authorization: token, container: divRef }) →
+ *      renders Braintree's PCI-compliant card iframe
+ *   3. User clicks Pay → dropinInstance.requestPaymentMethod() returns
+ *      a one-shot nonce → POST it to /api/marketplace/{job_id}/checkout-bt
+ *      together with the buyer's email and origin
+ *   4. Backend calls gateway.transaction.sale(...) and returns
+ *      {success, transaction_id, download_token} on the same request
+ *   5. We hand the buyer their download_token by navigating to the
+ *      existing success page — keeps the email-receipt + download UI
+ *      paths intact so nothing else needs to change.
  *
- *  Anonymous-friendly: no login required. Email is used so we can email
- *  the buyer their download link as backup.
+ * Notes:
+ * - The Drop-in instance is torn down on unmount AND on every payment
+ *   attempt so we never reuse a stale, already-submitted nonce.
+ * - The Pay button is disabled until Drop-in finishes initialising
+ *   AND until the email is valid.
  */
 export const PurchaseDialog = ({ listing, onClose }) => {
   const [email, setEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [dropinReady, setDropinReady] = useState(false);
+  const [initError, setInitError] = useState("");
+
+  const containerRef = useRef(null);
+  const dropinRef = useRef(null);
 
   const price = Number(listing.price_usd || 0);
   const fee = (price * PLATFORM_FEE_PCT) / 100;
   const creator = price - fee;
   const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  // --- Drop-in lifecycle ---
+  useEffect(() => {
+    let cancelled = false;
+
+    const mount = async () => {
+      try {
+        const res = await fetch(`${API}/marketplace/client-token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (!res.ok) throw new Error(`client-token ${res.status}`);
+        const { client_token } = await res.json();
+        if (cancelled) return;
+        const instance = await dropin.create({
+          authorization: client_token,
+          container: containerRef.current,
+          card: { cardholderName: { required: true } },
+        });
+        if (cancelled) {
+          await instance.teardown().catch(() => {});
+          return;
+        }
+        dropinRef.current = instance;
+        setDropinReady(true);
+      } catch (e) {
+        if (!cancelled) {
+          setInitError(e?.message || "Failed to initialise the card form.");
+        }
+      }
+    };
+
+    mount();
+
+    return () => {
+      cancelled = true;
+      if (dropinRef.current) {
+        dropinRef.current.teardown().catch(() => {});
+        dropinRef.current = null;
+      }
+    };
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -23,22 +88,45 @@ export const PurchaseDialog = ({ listing, onClose }) => {
       setError("Please enter a valid email");
       return;
     }
+    if (!dropinRef.current) {
+      setError("Card form isn't ready yet — please wait a moment.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
-      const { url } = await createCheckoutSession(listing.job_id, email);
+      const { nonce } = await dropinRef.current.requestPaymentMethod();
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      const checkoutRes = await fetch(
+        `${API}/marketplace/${listing.job_id}/checkout-bt`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            payment_method_nonce: nonce,
+            buyer_email: email,
+            origin_url: origin,
+          }),
+        }
+      );
+      const data = await checkoutRes.json();
+      if (!checkoutRes.ok || !data.success) {
+        throw new Error(data.error_message || "Payment was declined.");
+      }
       // Stash buyer email for the success page email-receipt UI.
       try {
         sessionStorage.setItem(`buyer_email_${listing.job_id}`, email);
       } catch {
-        /* sessionStorage may be unavailable in private mode */
+        /* ignore */
       }
-      window.location.href = url;
+      // Land on the existing success page with the download token.
+      window.location.href =
+        `/marketplace/${listing.job_id}/success?session_id=${encodeURIComponent(
+          data.transaction_id
+        )}&token=${encodeURIComponent(data.download_token)}`;
     } catch (err) {
-      setError(
-        err?.response?.data?.detail ||
-          "Could not start checkout. Please try again."
-      );
+      setError(err?.message || "Could not complete payment.");
       setSubmitting(false);
     }
   };
@@ -52,7 +140,7 @@ export const PurchaseDialog = ({ listing, onClose }) => {
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
-        className="bg-zinc-950 border border-zinc-800 max-w-md w-full p-6 space-y-5"
+        className="bg-zinc-950 border border-zinc-800 max-w-md w-full p-6 space-y-5 max-h-[92vh] overflow-y-auto"
         data-testid="purchase-dialog"
       >
         <div className="flex items-start justify-between">
@@ -112,10 +200,34 @@ export const PurchaseDialog = ({ listing, onClose }) => {
             data-testid="purchase-email-input"
             className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 font-mono text-[12px] text-zinc-100 focus:outline-none focus:border-zinc-500"
           />
-          <div className="font-mono text-[9px] text-zinc-600 mt-1 leading-relaxed">
-            We'll email you the STL/3MF download link so it's safe to return
-            to later. No account required.
-          </div>
+        </div>
+
+        <div>
+          <label className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
+            Card details
+          </label>
+          {initError ? (
+            <div
+              data-testid="dropin-error"
+              className="font-mono text-[10px] text-red-400 border border-red-900 bg-red-950/40 px-2 py-2"
+            >
+              {initError}
+            </div>
+          ) : (
+            <div
+              ref={containerRef}
+              data-testid="braintree-dropin-container"
+              className="bg-zinc-900 border border-zinc-800 p-2 min-h-[110px]"
+            />
+          )}
+          {!dropinReady && !initError && (
+            <div
+              data-testid="dropin-loading"
+              className="font-mono text-[10px] text-zinc-500 mt-1"
+            >
+              Loading secure card form…
+            </div>
+          )}
         </div>
 
         {error && (
@@ -129,17 +241,17 @@ export const PurchaseDialog = ({ listing, onClose }) => {
 
         <button
           type="submit"
-          disabled={submitting || !validEmail}
+          disabled={submitting || !validEmail || !dropinReady}
           data-testid="purchase-submit-btn"
           className="w-full flex items-center justify-center gap-2 bg-zinc-100 text-zinc-950 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.2em] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
         >
           <ShoppingBag className="w-3.5 h-3.5" />
-          {submitting ? "Starting checkout…" : `Pay $${price.toFixed(2)}`}
+          {submitting ? "Processing payment…" : `Pay $${price.toFixed(2)}`}
         </button>
 
         <div className="font-mono text-[9px] text-zinc-600 text-center leading-relaxed">
-          Payments by Stripe. After checkout you'll be redirected back to
-          download your STL & 3MF files instantly.
+          Payments by Braintree (a PayPal company). Cards processed in
+          Braintree&apos;s PCI-compliant iframe — we never see your card data.
         </div>
       </form>
     </div>
