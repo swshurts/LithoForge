@@ -32,7 +32,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, EmailStr, Field
 
 from email_service import send_purchase_email
-from payouts import settle_creator_payout
+from payouts import settle_creator_payout as _legacy_stripe_settle  # noqa: F401  (kept for rollback)
+from paypal_payouts import settle_creator_payout
 
 PLATFORM_FEE_PCT = 6.0
 

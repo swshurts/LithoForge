@@ -1,0 +1,38 @@
+{
+  "summary": "PayPal Payouts (mock mode) end-to-end verification — backend pytest 112/112 passing (98 prior regression + 14 new in tests/test_paypal_payouts.py). Backend covers: 401-on-anon /payouts/status, /payouts/email EmailStr 422 + happy-path lower-casing, /payouts/transactions empty shape, /admin/payouts/pending shape (threshold_usd=1.0, mode='mock', eligible_count, below_threshold_count, creators), /admin/payouts/run writes admin_audit_log row with action='payout_run', end-to-end mock dispatch zeros pending_balance_usd + increments lifetime_paid_usd + writes payout_batches row (status='SUCCESS', mode='mock') + flips payment_transactions.payout_status='paid', threshold filter excludes <$1, missing paypal_email filter, PAYMENT.PAYOUTS-ITEM.FAILED webhook refunds pending_balance_usd + flips txn status to 'failed', settle_creator_payout credits pending_balance_usd (no live transfer). Frontend verified via Playwright on the public REACT_APP_BACKEND_URL: /payouts anonymous shows data-testid='payouts-signin-gate' + 'payouts-signin-btn' (no infinite loading); /payouts authed renders paypal-email-card, paypal-email-input, paypal-email-save, pending-balance-card, lifetime-paid-amount, payouts-batches, payouts-ledger; saving a valid email fires a Sonner toast and the value persists on reload (re-fetch confirms). /admin sidebar exposes data-testid='admin-tab-payouts' for super-admin; clicking it renders admin-payouts-tab, admin-total-pending, admin-eligible-count, admin-run-payouts. Clicking admin-run-payouts fires confirm() (auto-accepted) and the request is sent — no UI errors. /studio and /marketplace regression load with no error elements.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_paypal_payouts.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "paypal_payouts.py:556 — set_user_paypal_email endpoint applies PAYPAL_EMAIL_RE post-Pydantic EmailStr; this is double-validation and unreachable in practice (EmailStr already rejects malformed). Safe but dead code — consider removing for clarity.",
+    "paypal_payouts.py:380-408 — run_payout_batch loops with one $inc per creator inside a Python for-loop. Fine for <100 creators but consider a single bulk_write(UpdateOne, ...) once batches grow.",
+    "paypal_payouts.py:702 — /webhook/paypal-payouts has NO signature verification (documented as intentional during mock phase). Before going live, MUST wire PayPal /v1/notifications/verify-webhook-signature using PAYPAL_WEBHOOK_ID — a leaked URL would otherwise let anyone refund creator balances by faking FAILED events.",
+    "paypal_payouts.py:702 — webhook endpoint accepts unsigned events even when mode is 'live'. Add an `if _paypal_mode() == 'live': verify_signature(...)` guard so the dev-mode skip cannot accidentally ship to prod.",
+    "paypal_payouts.py:507 — on 'unclaimed' the balance is refunded (correct), but PayPal can later auto-route the unclaimed funds back to us 30d later as RETURNED; the current code maps RETURNED → 'failed' and refunds AGAIN, so a creator could be double-credited if both UNCLAIMED then RETURNED arrive for the same item. Guard against re-refunding the same sender_item_id (idempotency).",
+    "server.py:652/667 — still using deprecated @app.on_event hooks for the APScheduler startup/shutdown wiring; migrate to FastAPI lifespan context manager.",
+    "PayoutsPage.jsx — admin 'Run payouts now' uses native window.confirm(); fine for an internal admin tool but a shadcn AlertDialog would be more consistent with the rest of the app and easier to test deterministically.",
+    "PayoutsPage.jsx recent-sales/recent-payouts lists — consider adding aria-labels on the PENDING/PAID badges; currently visual-only color cue."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (112/112 pytest, incl. 14 new PayPal payouts tests)",
+    "frontend": "100% — /payouts (anon+authed), email save+persist, /admin Payouts tab + Run button, /studio + /marketplace regression all green"
+  },
+  "test_credentials": "Used the pytest super-admin seeded by tests/conftest.py (user_id='test-user-pytest', email='pytest@example.com', tier='pro', is_super_admin=true). For the Playwright UI session, manually inserted a 7-day user_sessions doc and set it as the `session_token` cookie on the preview domain — same flow documented in /app/memory/test_credentials.md.",
+  "seed_data_creation": "Backend tests auto-seed payout-test-* users via _seed_creator() helper and clean up via _cleanup() in setup/teardown_method (deletes payout_batches and payment_transactions with creator_id prefix payout-test-). No persistent test data remains after the run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run backend: `cd /app/backend && PAYOUT_SCHEDULER_DISABLED=1 python -m pytest tests/ -q` (112 tests, ~24s). The PAYOUT_SCHEDULER_DISABLED=1 env is critical — without it, the APScheduler in server.py will boot during tests and may fire a real run mid-suite. Mock mode is the default whenever PAYPAL_CLIENT_ID is unset/empty (paypal_payouts._paypal_mode() check). For UI, paste a session_token cookie obtained via the conftest._seed_test_user_and_session() flow (or use the mongosh snippet in /app/memory/test_credentials.md) — anon hits the 'payouts-signin-gate' as designed. The /admin Payouts tab tile counters read $0/0/0 immediately after pytest cleanup since teardown wipes payout_batches and pending_balance_usd; to see populated tiles, manually seed a creator with pending_balance_usd>=1 and paypal_email before navigating.",
+  "rca of the issue": "N/A — no bugs found. PayPal mock-mode pipeline is functionally complete and ready for the user to drop in PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET / PAYPAL_ENVIRONMENT to flip to live without code changes. Webhook signature verification is the one production gap that MUST be implemented before going live (see critical_code_review_comments)."
+}

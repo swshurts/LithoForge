@@ -10,6 +10,7 @@ import { ListingDetailPage } from "@/components/marketplace/ListingDetailPage";
 import { PurchaseSuccessPage } from "@/components/marketplace/PurchaseSuccessPage";
 import { PayoutsPage } from "@/components/marketplace/PayoutsPage";
 import { PricingPage } from "@/components/PricingPage";
+import { AdminPage } from "@/components/admin/AdminPage";
 import { installErrorReporter } from "@/lib/errorReporter";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, AuthCallbackHandler } from "@/lib/auth";
@@ -44,6 +45,7 @@ root.render(
               <Route path="/creator/:userId" element={<CreatorPage />} />
               <Route path="/payouts" element={<PayoutsPage />} />
               <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/admin" element={<AdminPage />} />
             </Routes>
           </BrowserRouter>
         </QuotaProvider>

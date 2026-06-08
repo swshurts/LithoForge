@@ -134,3 +134,5 @@ watchfiles==1.1.1
 websockets==16.0
 yarl==1.23.0
 zipp==3.23.0
+APScheduler==3.11.2
+tzlocal==5.3.1

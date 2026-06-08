@@ -196,32 +196,50 @@ export const getMyQuota = async () => {
   return data; // { tier, period, period_key, limit, used, remaining, blocked }
 };
 
-// --- Creator payouts (Stripe Connect) -------------------------------
-export const startPayoutOnboarding = async () => {
-  const origin = window.location.origin;
+// --- Creator payouts (PayPal Payouts) -------------------------------
+export const setPaypalEmail = async (paypalEmail) => {
   const { data } = await api.post(
-    "/payouts/onboard",
-    {
-      return_url: `${origin}/?payouts=ok`,
-      refresh_url: `${origin}/?payouts=refresh`,
-    },
+    "/payouts/email",
+    { paypal_email: paypalEmail },
     { withCredentials: true },
   );
-  return data; // { url, account_id, payouts_enabled }
+  return data;
 };
 
 export const getPayoutStatus = async () => {
   const { data } = await api.get("/payouts/status", {
     withCredentials: true,
   });
-  return data; // { has_account, payouts_enabled, charges_enabled, details_submitted }
+  return data; // { paypal_email, pending_balance_usd, lifetime_paid_usd, payout_threshold_usd, mode }
 };
 
 export const getPayoutTransactions = async () => {
   const { data } = await api.get("/payouts/transactions", {
     withCredentials: true,
   });
-  return data; // { transactions, total_paid_usd, total_pending_usd }
+  return data; // { transactions, payouts }
+};
+
+// --- Admin payouts ---------------------------------------------------
+export const adminGetPendingPayouts = async () => {
+  const { data } = await api.get("/admin/payouts/pending", {
+    withCredentials: true,
+  });
+  return data;
+};
+
+export const adminRunPayouts = async () => {
+  const { data } = await api.post("/admin/payouts/run", null, {
+    withCredentials: true,
+  });
+  return data;
+};
+
+export const adminListPayoutBatches = async () => {
+  const { data } = await api.get("/admin/payouts/batches", {
+    withCredentials: true,
+  });
+  return data;
 };
 
 // --- Marketplace Phase B: guest checkout ----------------------------

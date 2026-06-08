@@ -28,6 +28,17 @@ class User(BaseModel):
     email: str
     name: str
     picture: str = ""
+    is_admin: bool = False
+    is_super_admin: bool = False
+    is_suspended: bool = False
+    ai_quota_override: Optional[int] = None
+
+
+def _super_admin_emails() -> set:
+    """Parse the SUPER_ADMIN_EMAILS env var into a normalized set. Case-
+    insensitive so a typo in capitalisation can't lock you out."""
+    raw = os.environ.get("SUPER_ADMIN_EMAILS", "")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
 
 
 class SessionExchangeIn(BaseModel):
@@ -65,6 +76,11 @@ def _build_auth_router(db: AsyncIOMotorDatabase) -> APIRouter:
             {"user_id": session_doc["user_id"]}, {"_id": 0}
         )
         if not user_doc:
+            return None
+        # If the user was suspended mid-session, drop the session token
+        # so the next request gets a clean 401.
+        if user_doc.get("is_suspended"):
+            await db.user_sessions.delete_many({"user_id": user_doc["user_id"]})
             return None
         return User(**user_doc)
 
@@ -109,13 +125,33 @@ def _build_auth_router(db: AsyncIOMotorDatabase) -> APIRouter:
         picture = data.get("picture", "")
         session_token = data["session_token"]
 
+        # Decide super-admin status from the env var allowlist on every
+        # login. The flag is reset on each login so removing an email
+        # from SUPER_ADMIN_EMAILS revokes admin powers at the next sign-in.
+        is_super_admin = email.lower() in _super_admin_emails()
+
         # Upsert user by email (don't duplicate users if they re-login).
         existing = await db.users.find_one({"email": email}, {"_id": 0})
         if existing:
+            # Refuse sign-in for suspended accounts and invalidate any
+            # lingering sessions so a stale cookie can't bypass the ban.
+            if existing.get("is_suspended"):
+                await db.user_sessions.delete_many({"user_id": existing["user_id"]})
+                raise HTTPException(
+                    status_code=403,
+                    detail="This account has been suspended.",
+                )
             user_id = existing["user_id"]
             await db.users.update_one(
                 {"user_id": user_id},
-                {"$set": {"name": name, "picture": picture}},
+                {
+                    "$set": {
+                        "name": name,
+                        "picture": picture,
+                        "is_super_admin": is_super_admin,
+                        "last_login_at": datetime.now(timezone.utc),
+                    }
+                },
             )
         else:
             user_id = f"user_{uuid.uuid4().hex[:12]}"
@@ -125,7 +161,12 @@ def _build_auth_router(db: AsyncIOMotorDatabase) -> APIRouter:
                     "email": email,
                     "name": name,
                     "picture": picture,
+                    "is_admin": False,
+                    "is_super_admin": is_super_admin,
+                    "is_suspended": False,
+                    "ai_quota_override": None,
                     "created_at": datetime.now(timezone.utc),
+                    "last_login_at": datetime.now(timezone.utc),
                 }
             )
 

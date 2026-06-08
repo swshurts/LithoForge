@@ -4,57 +4,60 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   CheckCircle2,
-  ExternalLink,
   HandCoins,
   Loader2,
+  Mail,
 } from "lucide-react";
 import { useAuth } from "../../lib/auth";
 import {
   getPayoutStatus,
   getPayoutTransactions,
-  startPayoutOnboarding,
+  setPaypalEmail,
 } from "../../lib/api";
 
-/** /payouts — creator-facing payouts dashboard.
- *  Auth-required. Shows Stripe Connect onboarding state + a sales ledger. */
+/** /payouts — creator-facing payouts dashboard (PayPal Payouts).
+ *  Auth-required. Creator enters PayPal email; we accrue earnings into
+ *  a pending balance and dispatch a weekly batch payout every Monday
+ *  00:00 UTC once their balance ≥ threshold. */
 export const PayoutsPage = () => {
   const { user, loading: authLoading, login } = useAuth();
   const [status, setStatus] = useState(null);
   const [ledger, setLedger] = useState(null);
+  const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const refresh = async () => {
+    try {
+      const [s, l] = await Promise.all([
+        getPayoutStatus(),
+        getPayoutTransactions(),
+      ]);
+      setStatus(s);
+      setLedger(l);
+      setEmail(s.paypal_email || "");
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const [s, l] = await Promise.all([
-          getPayoutStatus(),
-          getPayoutTransactions(),
-        ]);
-        if (!cancelled) {
-          setStatus(s);
-          setLedger(l);
-        }
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+    refresh();
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleOnboard = async () => {
+  const handleSaveEmail = async (e) => {
+    e?.preventDefault?.();
+    if (!email.trim()) return;
     setBusy(true);
     try {
-      const { url } = await startPayoutOnboarding();
-      window.location.href = url;
-    } catch (e) {
+      const s = await setPaypalEmail(email.trim());
+      setStatus(s);
+      toast.success("PayPal email saved");
+    } catch (err) {
       toast.error(
-        e?.response?.data?.detail ||
-          "Could not start payout onboarding. Try again in a minute.",
+        err?.response?.data?.detail || "Could not save PayPal email",
       );
+    } finally {
       setBusy(false);
     }
   };
@@ -78,9 +81,8 @@ export const PayoutsPage = () => {
             Sign in to manage payouts
           </h1>
           <p className="font-mono text-[11px] text-zinc-500">
-            Creator payouts require an account so we can attach your Stripe
-            Connect details. Buyers can still purchase your listings —
-            sign-in is only for receiving the money.
+            Creator payouts go via PayPal. Sign in so we can store your
+            PayPal email and route your share of marketplace sales.
           </p>
           <button
             onClick={login}
@@ -100,8 +102,12 @@ export const PayoutsPage = () => {
     );
   }
 
-  const onboarded = status?.has_account && status?.payouts_enabled;
-  const partiallyOnboarded = status?.has_account && !status?.payouts_enabled;
+  const hasEmail = !!status?.paypal_email;
+  const pending = Number(status?.pending_balance_usd ?? 0);
+  const lifetime = Number(status?.lifetime_paid_usd ?? 0);
+  const threshold = Number(status?.payout_threshold_usd ?? 1);
+  const aboveThreshold = pending >= threshold;
+  const mode = status?.mode || "mock";
 
   return (
     <div
@@ -117,6 +123,16 @@ export const PayoutsPage = () => {
             <h1 className="font-display text-4xl font-black tracking-tight">
               Payouts
             </h1>
+            <p className="font-mono text-[11px] text-zinc-500 mt-2 max-w-xl">
+              Earnings accumulate into your pending balance and ship
+              every Monday 00:00 UTC once your balance reaches{" "}
+              <strong className="text-zinc-300">${threshold.toFixed(2)}</strong>.
+              {mode === "mock" && (
+                <span className="ml-2 text-amber-300">
+                  · Sandbox/mock mode
+                </span>
+              )}
+            </p>
           </div>
           <Link
             to="/studio"
@@ -126,129 +142,166 @@ export const PayoutsPage = () => {
           </Link>
         </header>
 
-        {/* Connect status card */}
+        {/* PayPal email card */}
         <section
           className="border border-zinc-800 p-6 space-y-4"
-          data-testid="payouts-status-card"
+          data-testid="paypal-email-card"
         >
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500">
-                Stripe Connect status
-              </div>
-              <div className="flex items-center gap-2">
-                {onboarded ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span className="font-display text-xl font-bold">
-                      Payouts active
-                    </span>
-                  </>
-                ) : partiallyOnboarded ? (
-                  <>
-                    <AlertTriangle className="w-4 h-4 text-amber-400" />
-                    <span className="font-display text-xl font-bold">
-                      Onboarding incomplete
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <HandCoins className="w-4 h-4 text-zinc-400" />
-                    <span className="font-display text-xl font-bold">
-                      Not yet set up
-                    </span>
-                  </>
-                )}
-              </div>
-              <p className="font-mono text-[11px] text-zinc-500 max-w-xl leading-relaxed">
-                {onboarded ? (
-                  <>
-                    Your Stripe account is connected and verified. Every
-                    sale automatically transfers your 94% share within a
-                    few seconds of the buyer's payment confirming.
-                  </>
-                ) : partiallyOnboarded ? (
-                  <>
-                    Stripe still needs more details (ID, bank account,
-                    tax info) before they'll let us send you money. New
-                    sales are held as "Owed" until you finish.
-                  </>
-                ) : (
-                  <>
-                    Set up Stripe Connect to receive automatic payouts on
-                    every sale. We never see your bank details — Stripe
-                    handles ID verification + transfers. The platform fee
-                    stays at <strong>6%</strong>; you receive <strong>94%</strong>.
-                  </>
-                )}
-              </p>
-              {status?.account_id && (
-                <div className="font-mono text-[9px] text-zinc-700">
-                  Account · {status.account_id}
-                </div>
-              )}
+          <div className="flex items-center gap-2">
+            {hasEmail ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-amber-400" />
+            )}
+            <span className="font-display text-xl font-bold">
+              {hasEmail ? "PayPal connected" : "Connect PayPal"}
+            </span>
+          </div>
+          <p className="font-mono text-[11px] text-zinc-500 max-w-2xl leading-relaxed">
+            Enter the email address associated with your PayPal account.
+            PayPal will receive your batched payout — if you don&apos;t yet
+            have a PayPal account at that email, PayPal will email you
+            an invitation to claim the funds. Platform fee:{" "}
+            <strong className="text-zinc-300">6%</strong>; you receive{" "}
+            <strong className="text-zinc-300">94%</strong> of each sale.
+          </p>
+          <form
+            onSubmit={handleSaveEmail}
+            className="flex items-center gap-2 max-w-md"
+          >
+            <div className="relative flex-1">
+              <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="email"
+                required
+                placeholder="you@paypal.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                data-testid="paypal-email-input"
+                className="w-full pl-9 pr-3 py-2 bg-zinc-900 border border-zinc-800 focus:border-zinc-500 focus:outline-none font-mono text-[12px] text-zinc-100"
+              />
             </div>
             <button
-              onClick={handleOnboard}
-              disabled={busy}
-              data-testid="start-payout-onboarding"
-              className="flex items-center gap-2 px-4 py-2 bg-zinc-100 text-zinc-950 font-mono text-[10px] uppercase tracking-[0.18em] font-bold hover:bg-white disabled:opacity-50"
+              type="submit"
+              disabled={busy || !email.trim()}
+              data-testid="paypal-email-save"
+              className="px-4 py-2 bg-zinc-100 text-zinc-950 font-mono text-[10px] uppercase tracking-[0.18em] font-bold hover:bg-white disabled:opacity-50"
             >
-              {busy ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <ExternalLink className="w-3.5 h-3.5" />
-              )}
-              {onboarded ? "Manage on Stripe" : partiallyOnboarded ? "Resume onboarding" : "Set up payouts"}
+              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
             </button>
+          </form>
+          {hasEmail && (
+            <div className="font-mono text-[10px] text-zinc-600">
+              Current · {status.paypal_email}
+            </div>
+          )}
+        </section>
+
+        {/* Balance summary */}
+        <section className="grid grid-cols-3 gap-3">
+          <div
+            className={`border p-4 ${
+              aboveThreshold ? "border-emerald-900" : "border-zinc-800"
+            }`}
+            data-testid="pending-balance-card"
+          >
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2">
+              Pending balance
+            </div>
+            <div
+              className={`font-display text-3xl font-black tabular-nums ${
+                aboveThreshold ? "text-emerald-300" : "text-zinc-100"
+              }`}
+              data-testid="pending-balance-amount"
+            >
+              ${pending.toFixed(2)}
+            </div>
+            <div className="font-mono text-[10px] text-zinc-600 mt-1">
+              {hasEmail
+                ? aboveThreshold
+                  ? "Will ship on next Monday batch"
+                  : `Ships at $${threshold.toFixed(2)} threshold`
+                : "Connect PayPal to receive"}
+            </div>
+          </div>
+          <div className="border border-zinc-800 p-4">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2">
+              Lifetime paid
+            </div>
+            <div
+              className="font-display text-3xl font-black tabular-nums text-zinc-100"
+              data-testid="lifetime-paid-amount"
+            >
+              ${lifetime.toFixed(2)}
+            </div>
+          </div>
+          <div className="border border-zinc-800 p-4">
+            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2">
+              Payout threshold
+            </div>
+            <div className="font-display text-3xl font-black tabular-nums text-zinc-500">
+              ${threshold.toFixed(2)}
+            </div>
           </div>
         </section>
 
-        {/* Ledger summary */}
-        <section className="grid grid-cols-2 gap-3">
-          <div className="border border-zinc-800 p-4">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2">
-              Lifetime paid out
-            </div>
-            <div
-              className="font-display text-3xl font-black tabular-nums text-emerald-300"
-              data-testid="total-paid"
-            >
-              ${(ledger?.total_paid_usd ?? 0).toFixed(2)}
-            </div>
+        {/* Recent payouts (PayPal batches) */}
+        <section data-testid="payouts-batches">
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500 mb-3">
+            Recent payouts
           </div>
-          <div className="border border-zinc-800 p-4">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2">
-              Owed (pending onboarding)
+          {!ledger?.payouts?.length ? (
+            <div className="font-mono text-[11px] text-zinc-600 border border-dashed border-zinc-800 p-6 text-center">
+              No payouts yet. Once a Monday batch runs you&apos;ll see it here.
             </div>
-            <div
-              className="font-display text-3xl font-black tabular-nums text-amber-300"
-              data-testid="total-pending"
-            >
-              ${(ledger?.total_pending_usd ?? 0).toFixed(2)}
+          ) : (
+            <div className="border border-zinc-800">
+              {ledger.payouts.map((p) => (
+                <div
+                  key={p.batch_id}
+                  className="grid grid-cols-12 gap-3 border-b border-zinc-900 py-3 px-4 font-mono text-[11px]"
+                  data-testid={`batch-${p.batch_id}`}
+                >
+                  <div className="col-span-3 text-zinc-500 truncate">
+                    {p.created_at && new Date(p.created_at).toLocaleString()}
+                  </div>
+                  <div className="col-span-3 truncate text-zinc-400">
+                    → {p.paypal_email}
+                  </div>
+                  <div className="col-span-2 tabular-nums text-zinc-100">
+                    ${Number(p.amount_usd).toFixed(2)}
+                  </div>
+                  <div className="col-span-2 text-zinc-500 uppercase tracking-wider">
+                    {p.mode === "mock" ? "MOCK" : p.mode}
+                  </div>
+                  <div className="col-span-2 text-right">
+                    <BatchBadge status={p.item_status} />
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
+          )}
         </section>
 
-        {/* Transaction list */}
+        {/* Recent sales */}
         <section data-testid="payouts-ledger">
           <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-500 mb-3">
             Recent sales
           </div>
           {!ledger?.transactions?.length && (
-            <div className="font-mono text-[11px] text-zinc-600 border border-dashed border-zinc-800 p-8 text-center">
+            <div className="font-mono text-[11px] text-zinc-600 border border-dashed border-zinc-800 p-6 text-center">
               No sales yet. Once a buyer purchases one of your listings,
-              the transaction shows up here.
+              the sale shows up here.
             </div>
           )}
           {ledger?.transactions?.map((t) => (
             <div
-              key={t.session_id}
+              key={t.session_id || t.transaction_id}
               className="grid grid-cols-12 gap-3 border-b border-zinc-900 py-3 font-mono text-[11px]"
-              data-testid={`txn-${t.session_id}`}
+              data-testid={`txn-${t.session_id || t.transaction_id}`}
             >
               <div className="col-span-3 text-zinc-500 truncate">
-                {new Date(t.paid_at).toLocaleString()}
+                {t.paid_at && new Date(t.paid_at).toLocaleString()}
               </div>
               <div className="col-span-3 truncate text-zinc-300">
                 {t.buyer_email}
@@ -262,11 +315,6 @@ export const PayoutsPage = () => {
               <div className="col-span-2 text-right">
                 <PayoutBadge status={t.payout_status} />
               </div>
-              {t.transfer_failed_reason && (
-                <div className="col-span-12 text-amber-400 text-[10px] mt-1">
-                  ⚠ {t.transfer_failed_reason}
-                </div>
-              )}
             </div>
           ))}
         </section>
@@ -277,13 +325,14 @@ export const PayoutsPage = () => {
 
 const PayoutBadge = ({ status }) => {
   const map = {
-    transferred: { label: "Paid", cls: "text-emerald-300 border-emerald-900" },
-    owed: { label: "Owed", cls: "text-amber-300 border-amber-900" },
+    paid: { label: "Paid", cls: "text-emerald-300 border-emerald-900" },
+    batched: { label: "Batched", cls: "text-sky-300 border-sky-900" },
     pending: { label: "Pending", cls: "text-amber-300 border-amber-900" },
     failed: { label: "Failed", cls: "text-red-300 border-red-900" },
+    unclaimed: { label: "Unclaimed", cls: "text-amber-300 border-amber-900" },
     skipped: { label: "—", cls: "text-zinc-500 border-zinc-800" },
   };
-  const cfg = map[status] || map.owed;
+  const cfg = map[status] || map.pending;
   return (
     <span
       className={`inline-block border px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] ${cfg.cls}`}
@@ -292,3 +341,23 @@ const PayoutBadge = ({ status }) => {
     </span>
   );
 };
+
+const BatchBadge = ({ status }) => {
+  const cls =
+    status === "SUCCESS" || status === "SUCCEEDED"
+      ? "text-emerald-300 border-emerald-900"
+      : status === "FAILED" || status === "RETURNED" || status === "BLOCKED"
+        ? "text-red-300 border-red-900"
+        : status === "UNCLAIMED"
+          ? "text-amber-300 border-amber-900"
+          : "text-zinc-400 border-zinc-800";
+  return (
+    <span
+      className={`inline-block border px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] ${cls}`}
+    >
+      {status || "—"}
+    </span>
+  );
+};
+
+export default PayoutsPage;

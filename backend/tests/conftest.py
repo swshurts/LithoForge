@@ -53,6 +53,14 @@ def _seed_test_user_and_session() -> str:
                     "email": "pytest@example.com",
                     "name": "Pytest User",
                     "tier": "pro",
+                    # Test user is a super-admin so the admin-route
+                    # tests can exercise the privileged endpoints. The
+                    # email is also listed in SUPER_ADMIN_EMAILS so the
+                    # /auth/session flow would set this flag anyway.
+                    "is_super_admin": True,
+                    "is_admin": True,
+                    "is_suspended": False,
+                    "ai_quota_override": None,
                     "updated_at": now,
                 },
                 "$setOnInsert": {"created_at": now},
