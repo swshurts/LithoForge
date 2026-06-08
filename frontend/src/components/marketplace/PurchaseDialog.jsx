@@ -244,34 +244,6 @@ export const PurchaseDialog = ({ listing, onClose }) => {
         </div>
 
         <div>
-          <label className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
-            Card details
-          </label>
-          {initError ? (
-            <div
-              data-testid="dropin-error"
-              className="font-mono text-[10px] text-red-400 border border-red-900 bg-red-950/40 px-2 py-2"
-            >
-              {initError}
-            </div>
-          ) : (
-            <div
-              ref={containerRef}
-              data-testid="braintree-dropin-container"
-              className="bg-zinc-900 border border-zinc-800 p-2 min-h-[110px]"
-            />
-          )}
-          {!dropinReady && !initError && (
-            <div
-              data-testid="dropin-loading"
-              className="font-mono text-[10px] text-zinc-500 mt-1"
-            >
-              Loading secure card form…
-            </div>
-          )}
-        </div>
-
-        <div>
           <label
             htmlFor="purchase-email"
             className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2 flex items-center justify-between"
@@ -306,6 +278,34 @@ export const PurchaseDialog = ({ listing, onClose }) => {
                 : "border-zinc-800"
             }`}
           />
+        </div>
+
+        <div>
+          <label className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
+            Card details
+          </label>
+          {initError ? (
+            <div
+              data-testid="dropin-error"
+              className="font-mono text-[10px] text-red-400 border border-red-900 bg-red-950/40 px-2 py-2"
+            >
+              {initError}
+            </div>
+          ) : (
+            <div
+              ref={containerRef}
+              data-testid="braintree-dropin-container"
+              className="bg-zinc-900 border border-zinc-800 p-2 min-h-[110px]"
+            />
+          )}
+          {!dropinReady && !initError && (
+            <div
+              data-testid="dropin-loading"
+              className="font-mono text-[10px] text-zinc-500 mt-1"
+            >
+              Loading secure card form…
+            </div>
+          )}
         </div>
 
         {error && (
