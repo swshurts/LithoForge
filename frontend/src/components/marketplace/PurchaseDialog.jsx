@@ -70,15 +70,15 @@ export const PurchaseDialog = ({ listing, onClose }) => {
           authorization: client_token,
           container: containerRef.current,
           card: { cardholderName: { required: true } },
-          // Enable PayPal as an alternative payment option — this
-          // sidesteps the "PayPal Privacy Statement" disclosure in
-          // the card form and gives PayPal-savvy buyers the familiar
-          // pop-out checkout window they're used to.
-          paypal: {
-            flow: "checkout",
-            amount: price.toFixed(2),
-            currency: "USD",
-          },
+          // PayPal intentionally disabled until a PayPal Business
+          // sandbox account is linked in Braintree (Settings →
+          // Processing → PayPal). To re-enable, uncomment:
+          //
+          // paypal: {
+          //   flow: "checkout",
+          //   amount: price.toFixed(2),
+          //   currency: "USD",
+          // },
         });
         if (cancelled) {
           await instance.teardown().catch(() => {});
