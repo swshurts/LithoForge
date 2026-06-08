@@ -41,6 +41,11 @@ export const PurchaseDialog = ({ listing, onClose }) => {
   const containerRef = useRef(null);
   const dropinRef = useRef(null);
   const pollRef = useRef(null);
+  const emailRef = useRef(null);
+  // Whether the user has actually tried to pay (or blurred the email
+  // field) — only then do we light up the missing-email warning so we
+  // don't yell at people who simply haven't started filling the form.
+  const [emailTouched, setEmailTouched] = useState(false);
 
   const price = Number(listing.price_usd || 0);
   const fee = (price * PLATFORM_FEE_PCT) / 100;
@@ -118,7 +123,16 @@ export const PurchaseDialog = ({ listing, onClose }) => {
   const submit = async (e) => {
     e.preventDefault();
     if (!validEmail) {
-      setError("Please enter a valid email");
+      setEmailTouched(true);
+      setError("Please enter your email so we can deliver the download link.");
+      // Pull the email field into view — without this the user may
+      // never realise the dialog scrolled past it.
+      try {
+        emailRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        emailRef.current?.focus();
+      } catch {
+        /* noop */
+      }
       return;
     }
     if (!dropinRef.current) {
@@ -231,24 +245,6 @@ export const PurchaseDialog = ({ listing, onClose }) => {
 
         <div>
           <label className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
-            Email for download link
-          </label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              setError("");
-            }}
-            required
-            placeholder="you@example.com"
-            data-testid="purchase-email-input"
-            className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 font-mono text-[12px] text-zinc-100 focus:outline-none focus:border-zinc-500"
-          />
-        </div>
-
-        <div>
-          <label className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
             Card details
           </label>
           {initError ? (
@@ -275,6 +271,43 @@ export const PurchaseDialog = ({ listing, onClose }) => {
           )}
         </div>
 
+        <div>
+          <label
+            htmlFor="purchase-email"
+            className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2 flex items-center justify-between"
+          >
+            <span>Email for download link</span>
+            <span
+              className={
+                emailTouched && !validEmail
+                  ? "text-red-400 normal-case tracking-normal text-[10px]"
+                  : "text-zinc-600 normal-case tracking-normal text-[10px]"
+              }
+            >
+              {emailTouched && !validEmail ? "Required" : "(required)"}
+            </span>
+          </label>
+          <input
+            id="purchase-email"
+            ref={emailRef}
+            type="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setError("");
+            }}
+            onBlur={() => setEmailTouched(true)}
+            required
+            placeholder="you@example.com"
+            data-testid="purchase-email-input"
+            className={`w-full bg-zinc-900 border px-3 py-2 font-mono text-[12px] text-zinc-100 focus:outline-none focus:border-zinc-500 ${
+              emailTouched && !validEmail
+                ? "border-red-500"
+                : "border-zinc-800"
+            }`}
+          />
+        </div>
+
         {error && (
           <div
             data-testid="purchase-error"
@@ -286,7 +319,7 @@ export const PurchaseDialog = ({ listing, onClose }) => {
 
         <button
           type="submit"
-          disabled={submitting || !validEmail || !dropinReady}
+          disabled={submitting || !dropinReady}
           data-testid="purchase-submit-btn"
           className="w-full flex items-center justify-center gap-2 bg-zinc-100 text-zinc-950 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.2em] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
         >
@@ -296,7 +329,7 @@ export const PurchaseDialog = ({ listing, onClose }) => {
             : !dropinReady
             ? "Loading card form…"
             : !validEmail
-            ? "Enter email above"
+            ? `Pay $${price.toFixed(2)} (enter email)`
             : !paymentMethodReady
             ? `Pay $${price.toFixed(2)} (finish card details)`
             : `Pay $${price.toFixed(2)}`}
