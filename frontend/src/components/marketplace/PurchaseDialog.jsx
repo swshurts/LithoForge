@@ -3,6 +3,7 @@ import { ShoppingBag, X } from "lucide-react";
 import dropin from "braintree-web-drop-in";
 
 import { API, PLATFORM_FEE_PCT } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
 
 /**
  * Braintree Drop-in purchase dialog (replaces the old Stripe-redirect
@@ -26,26 +27,26 @@ import { API, PLATFORM_FEE_PCT } from "../../lib/api";
  *   AND until the email is valid.
  */
 export const PurchaseDialog = ({ listing, onClose }) => {
-  const [email, setEmail] = useState("");
+  const { user } = useAuth();
+  // Default the email to the signed-in user's address so authenticated
+  // buyers never have to type it. Anonymous buyers still get the
+  // placeholder + "Required" cue.
+  const [email, setEmail] = useState(() => user?.email || "");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [dropinReady, setDropinReady] = useState(false);
-  // True once Drop-in reports it has a fully-valid card collected.
-  // Braintree fires `paymentMethodRequestable` when the user has
-  // typed enough valid info; we use that — not just "is initialised"
-  // — to gate the Pay button. Without this, even a perfectly valid
-  // card leaves Pay disabled because we'd never know it was ready.
+  // True once Drop-in reports it has a fully-valid payment method.
   const [paymentMethodReady, setPaymentMethodReady] = useState(false);
+  // Which Drop-in payment option is currently selected — drives the
+  // Pay button label so it reads "Pay $X with PayPal" / "with card" /
+  // "with Venmo" instead of a generic amount.
+  const [methodKind, setMethodKind] = useState("card");
   const [initError, setInitError] = useState("");
 
   const containerRef = useRef(null);
   const dropinRef = useRef(null);
   const pollRef = useRef(null);
   const emailRef = useRef(null);
-  // Whether the user has actually tried to pay (or blurred the email
-  // field) — only then do we light up the missing-email warning so we
-  // don't yell at people who simply haven't started filling the form.
-  const [emailTouched, setEmailTouched] = useState(false);
 
   const price = Number(listing.price_usd || 0);
   const fee = (price * PLATFORM_FEE_PCT) / 100;
@@ -69,6 +70,15 @@ export const PurchaseDialog = ({ listing, onClose }) => {
           authorization: client_token,
           container: containerRef.current,
           card: { cardholderName: { required: true } },
+          // Enable PayPal as an alternative payment option — this
+          // sidesteps the "PayPal Privacy Statement" disclosure in
+          // the card form and gives PayPal-savvy buyers the familiar
+          // pop-out checkout window they're used to.
+          paypal: {
+            flow: "checkout",
+            amount: price.toFixed(2),
+            currency: "USD",
+          },
         });
         if (cancelled) {
           await instance.teardown().catch(() => {});
@@ -92,6 +102,14 @@ export const PurchaseDialog = ({ listing, onClose }) => {
         refreshReady();
         instance.on("paymentMethodRequestable", refreshReady);
         instance.on("noPaymentMethodRequestable", refreshReady);
+        // Track which method the user picked so we can adapt the Pay
+        // button's label. Possible values include "card", "paypal",
+        // "venmo", "applePay", "googlePay".
+        instance.on("paymentOptionSelected", (payload) => {
+          if (payload?.paymentOption) {
+            setMethodKind(payload.paymentOption);
+          }
+        });
         // Belt-and-suspenders: poll until torn down. Drop-in sometimes
         // misses event emission on Safari + first-time card entry, so
         // the user can otherwise stare at a disabled button.
@@ -123,10 +141,7 @@ export const PurchaseDialog = ({ listing, onClose }) => {
   const submit = async (e) => {
     e.preventDefault();
     if (!validEmail) {
-      setEmailTouched(true);
       setError("Please enter your email so we can deliver the download link.");
-      // Pull the email field into view — without this the user may
-      // never realise the dialog scrolled past it.
       try {
         emailRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
         emailRef.current?.focus();
@@ -246,17 +261,18 @@ export const PurchaseDialog = ({ listing, onClose }) => {
         <div>
           <label
             htmlFor="purchase-email"
-            className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 mb-2 flex items-center justify-between"
+            className="font-mono text-[10px] uppercase tracking-[0.18em] mb-2 flex items-center justify-between"
           >
-            <span>Email for download link</span>
+            <span className="text-zinc-300">
+              Email for download link
+              <span className="text-red-400 ml-1">*</span>
+            </span>
             <span
-              className={
-                emailTouched && !validEmail
-                  ? "text-red-400 normal-case tracking-normal text-[10px]"
-                  : "text-zinc-600 normal-case tracking-normal text-[10px]"
-              }
+              className={`normal-case tracking-normal text-[10px] ${
+                validEmail ? "text-emerald-500" : "text-red-400"
+              }`}
             >
-              {emailTouched && !validEmail ? "Required" : "(required)"}
+              {validEmail ? "✓ Ready" : "Required"}
             </span>
           </label>
           <input
@@ -268,16 +284,18 @@ export const PurchaseDialog = ({ listing, onClose }) => {
               setEmail(e.target.value);
               setError("");
             }}
-            onBlur={() => setEmailTouched(true)}
             required
             placeholder="you@example.com"
             data-testid="purchase-email-input"
             className={`w-full bg-zinc-900 border px-3 py-2 font-mono text-[12px] text-zinc-100 focus:outline-none focus:border-zinc-500 ${
-              emailTouched && !validEmail
-                ? "border-red-500"
-                : "border-zinc-800"
+              validEmail ? "border-zinc-800" : "border-red-500/70"
             }`}
           />
+          {!validEmail && (
+            <div className="font-mono text-[9px] text-red-400/80 mt-1">
+              We&apos;ll email your download link here as a backup.
+            </div>
+          )}
         </div>
 
         <div>
@@ -324,15 +342,21 @@ export const PurchaseDialog = ({ listing, onClose }) => {
           className="w-full flex items-center justify-center gap-2 bg-zinc-100 text-zinc-950 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.2em] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
         >
           <ShoppingBag className="w-3.5 h-3.5" />
-          {submitting
-            ? "Processing payment…"
-            : !dropinReady
-            ? "Loading card form…"
-            : !validEmail
-            ? `Pay $${price.toFixed(2)} (enter email)`
-            : !paymentMethodReady
-            ? `Pay $${price.toFixed(2)} (finish card details)`
-            : `Pay $${price.toFixed(2)}`}
+          {(() => {
+            if (submitting) return "Processing payment…";
+            if (!dropinReady) return "Loading card form…";
+            if (!validEmail) return `Pay $${price.toFixed(2)} (enter email)`;
+            const amt = `$${price.toFixed(2)}`;
+            if (!paymentMethodReady) {
+              if (methodKind === "paypal") return `Pay ${amt} with PayPal`;
+              return `Pay ${amt} (finish card details)`;
+            }
+            if (methodKind === "paypal") return `Pay ${amt} with PayPal`;
+            if (methodKind === "venmo") return `Pay ${amt} with Venmo`;
+            if (methodKind === "applePay") return `Pay ${amt} with Apple Pay`;
+            if (methodKind === "googlePay") return `Pay ${amt} with Google Pay`;
+            return `Pay ${amt} with card`;
+          })()}
         </button>
 
         <div className="font-mono text-[9px] text-zinc-600 text-center leading-relaxed">
