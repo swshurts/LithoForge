@@ -1037,6 +1037,102 @@ indexing if your slicer pipeline needs it.
 - **Smoke test**: Playwright confirmed the Drop-in iframe renders inside
   the dialog with all expected card networks visible.
 
+## Implemented (2026-02-28) — Creator payouts migrated: Stripe Connect → PayPal Payouts
+- **Motivation**: User requested PayPal Payouts as the global creator-payout rail
+  (Braintree Marketplace is US-only; Stripe Connect is operational but onboarding
+  friction + account-freeze risk made Stripe Connect a poor fit for a global
+  hobbyist creator base).
+- **Backend** (`paypal_payouts.py`, new module replacing `payouts.py`):
+  - Direct PayPal REST v1 calls via `httpx` (the legacy `paypal-payouts-sdk` is
+    unmaintained sync-only). OAuth `client_credentials` → batch `/v1/payments/payouts`.
+  - **Mock mode**: when `PAYPAL_CLIENT_ID` is empty/unset the entire pipeline
+    short-circuits to `mode="mock"` and writes simulated success payloads —
+    devs can exercise the full UI / ledger / webhook flow without real keys.
+    Flips to live with one env-var change.
+  - `settle_creator_payout(db, txn)` now CREDITS `users.pending_balance_usd`
+    (atomic `$inc`) instead of issuing an immediate transfer.
+  - `run_payout_batch(db, triggered_by)` picks every creator with
+    `pending_balance_usd >= PAYOUT_THRESHOLD_USD` (default $1.00) AND
+    a stored `paypal_email`, ships one PayPal batch, persists a
+    `payout_batches` row, zeros the balances, flags contributing
+    `payment_transactions` rows to `payout_status='batched'` (or
+    `paid` in mock mode).
+  - **Idempotent webhook**: `/api/webhook/paypal-payouts` parses item-level
+    statuses (SUCCESS/FAILED/UNCLAIMED/RETURNED). Critical fix: when both
+    `UNCLAIMED` then `RETURNED` arrive for the same `sender_item_id`,
+    the balance is only refunded ONCE (checks prior `transaction_status`
+    before applying $inc).
+- **Weekly scheduler**: APScheduler `AsyncIOScheduler` boot-strapped in
+  `server.py` `@app.on_event("startup")` runs `run_payout_batch` every
+  Monday 00:00 UTC. Disabled in tests via `PAYOUT_SCHEDULER_DISABLED=1`.
+- **Admin endpoints** (`/admin/payouts/{pending,run,batches}`, guarded by
+  the new `build_require_admin(require_user_dep)` factory exported from
+  `admin.py`):
+  - `GET pending` lists every creator with pending balance + threshold
+    breakdown (eligible vs below).
+  - `POST run` triggers a manual batch dispatch and writes an
+    `admin_audit_log` entry with action='payout_run'.
+  - `GET batches` returns the most recent 50 dispatch records.
+- **Frontend rewrite**:
+  - `PayoutsPage.jsx` replaces Stripe Connect onboarding with a simple
+    PayPal email form + balance/lifetime cards + recent batches + recent
+    sales. Sign-in gated. Mock-mode banner shown when `mode==="mock"`.
+  - `AdminPage.jsx` gains a third sidebar entry "Payouts"
+    (`data-testid="admin-tab-payouts"`) → a tab with totals,
+    pending-creator list, recent batches, and a "Run payouts now"
+    button that fires a confirm()-guarded admin trigger.
+  - `lib/api.js` exposes: `setPaypalEmail`, `getPayoutStatus`,
+    `getPayoutTransactions`, `adminGetPendingPayouts`,
+    `adminRunPayouts`, `adminListPayoutBatches`.
+- **DB schema additions**:
+  - `users.{paypal_email, pending_balance_usd, lifetime_paid_usd, payout_updated_at}`
+  - new collection `payout_batches`: `{batch_id, payout_batch_id, status, total_usd, triggered_by, actor_user_id, items[{user_id, paypal_email, amount_usd, sender_item_id, status, transaction_status, transaction_id}], mode, created_at, paypal_response, error?}`
+  - `payment_transactions.payout_status` lifecycle: pending → batched →
+    paid | failed | unclaimed (with idempotency guard)
+- **Backwards compatibility**: `payouts.py` (Stripe Connect) kept on
+  disk + imported via `_legacy_stripe_settle` so rollback to Stripe is
+  a one-line import swap.
+- **Tests**: 15 new pytests in `tests/test_paypal_payouts.py` covering
+  auth gating, EmailStr validation, settle-credits-balance, threshold
+  filter, missing-paypal-email filter, end-to-end mock dispatch (creates
+  batch, zeros balances, increments lifetime_paid_usd, flips
+  transactions), admin endpoints (pending/run/batches/non-admin-403),
+  webhook FAILED refund flow, and **idempotency** (UNCLAIMED→RETURNED
+  does not double-refund). **Full backend suite: 113/113 passing**
+  (was 98).
+- **Verified live** via testing_agent_v3_fork — 113/113 backend pytests,
+  all UI flows green (anon sign-in gate, authed dashboard, email save +
+  persist, /admin Payouts tab + Run button, /studio + /marketplace
+  regression). No retest needed.
+
+### Setup required for live PayPal Payouts
+1. Sign in at **developer.paypal.com** → **Apps & Credentials** → tap
+   **Sandbox** then **Create App** (give it a name like "LithoForge
+   Payouts"). PayPal auto-creates a Sandbox Business account and links
+   it to the app.
+2. In the new app page, **enable Payouts** under the "App features"
+   section (this opens up `/v1/payments/payouts`). For production you'll
+   also need to request **production access** which PayPal manually
+   approves over ~24-48 hours.
+3. Copy **Client ID** and **Secret** from the Sandbox tab.
+4. In `/app/backend/.env`, set:
+   ```
+   PAYPAL_ENVIRONMENT=sandbox
+   PAYPAL_CLIENT_ID=<client_id>
+   PAYPAL_CLIENT_SECRET=<secret>
+   ```
+   Restart backend. `_paypal_mode()` will now report `"sandbox"` instead
+   of `"mock"`.
+5. (Optional) **Webhooks** — in the same sandbox app page click "Add
+   Webhook", URL = `https://<your-domain>/api/webhook/paypal-payouts`,
+   subscribe to `PAYMENT.PAYOUTS-ITEM.*` + `PAYMENT.PAYOUTSBATCH.*`.
+   Copy the webhook ID into `PAYPAL_WEBHOOK_ID` so we can add signature
+   verification before going live (current code accepts unsigned events
+   while in mock/sandbox — TODO before launch).
+6. To go live, repeat steps 1-3 in PayPal's Live tab, swap env to
+   `PAYPAL_ENVIRONMENT=live`, and **fund the sender account** at
+   PayPal.com (sandbox accounts are auto-funded with $5k+ test USD).
+
 ## Backlog
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG

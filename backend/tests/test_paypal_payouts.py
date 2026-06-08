@@ -291,3 +291,65 @@ class TestPayPalPayouts:
             assert txn["payout_status"] == "failed"
 
         _run(_verify())
+
+    def test_webhook_idempotency_no_double_refund(self):
+        """UNCLAIMED then RETURNED for the same sender_item_id must not
+        double-credit the creator's pending balance."""
+        from paypal_payouts import run_payout_batch
+
+        async def _setup():
+            db = _db()
+            await db.users.update_one(
+                {"user_id": "payout-test-idem"},
+                {"$set": {
+                    "user_id": "payout-test-idem",
+                    "email": "idem@t.co",
+                    "pending_balance_usd": 6.00,
+                    "paypal_email": "idem@paypal.com",
+                    "is_suspended": False,
+                }},
+                upsert=True,
+            )
+            await run_payout_batch(db, triggered_by="test")
+            batch = await db.payout_batches.find_one({"items.user_id": "payout-test-idem"})
+            return batch["items"][0]["sender_item_id"], batch.get("mode")
+
+        sid, mode = _run(_setup())
+
+        # First event: UNCLAIMED → balance refunded
+        unclaimed = {
+            "event_type": "PAYMENT.PAYOUTS-ITEM.UNCLAIMED",
+            "resource": {
+                "payout_item": {"sender_item_id": sid},
+                "transaction_status": "UNCLAIMED",
+                "payout_item_id": "pi-idem-1",
+            },
+        }
+        r = requests.post(f"{API}/webhook/paypal-payouts", json=unclaimed)
+        assert r.status_code == 200
+
+        # Second event: RETURNED for the same item → must NOT refund again
+        returned = {
+            "event_type": "PAYMENT.PAYOUTS-ITEM.RETURNED",
+            "resource": {
+                "payout_item": {"sender_item_id": sid},
+                "transaction_status": "RETURNED",
+                "payout_item_id": "pi-idem-1",
+            },
+        }
+        r = requests.post(f"{API}/webhook/paypal-payouts", json=returned)
+        assert r.status_code == 200
+
+        async def _verify():
+            db = _db()
+            user = await db.users.find_one({"user_id": "payout-test-idem"})
+            # In mock mode, the run already $inc'd lifetime_paid_usd by 6.00 at dispatch,
+            # but the failed/unclaimed webhook decrements via refund. Each refund adds 6
+            # back to pending. With idempotency, ONLY ONE refund should be applied:
+            # starting pending=0 (after run zeroed it), +6 (UNCLAIMED), +6 (RETURNED) would
+            # be 12 without idempotency; with the fix it should be 6.
+            assert abs(user["pending_balance_usd"] - 6.00) < 0.01, (
+                f"Double-refund detected: pending={user['pending_balance_usd']}"
+            )
+
+        _run(_verify())

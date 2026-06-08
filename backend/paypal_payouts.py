@@ -473,6 +473,18 @@ async def process_paypal_webhook_event(
         if not batch_doc:
             logger.warning("Webhook for unknown sender_item_id: %s", sender_item_id)
             return
+        # Idempotency: don't re-apply balance side-effects if the item
+        # already saw an outcome that touched the balance ledger.
+        prior_item = next(
+            (it for it in batch_doc.get("items", []) if it.get("sender_item_id") == sender_item_id),
+            {},
+        )
+        prior_status_normalised = mapping.get(
+            (prior_item.get("transaction_status") or "").upper(), None
+        )
+        already_refunded = prior_status_normalised in {"failed", "unclaimed"}
+        already_paid = prior_status_normalised == "paid"
+
         await db.payout_batches.update_one(
             {"items.sender_item_id": sender_item_id},
             {
@@ -503,13 +515,15 @@ async def process_paypal_webhook_event(
                 {"$set": {"payout_status": new_payout_status}},
             )
             # On payment failure refund the balance so the next batch
-            # can retry; on success update lifetime_paid.
-            if new_payout_status == "failed" or new_payout_status == "unclaimed":
+            # can retry; on success update lifetime_paid. Skip if we've
+            # already credited/debited for a prior outcome on this item
+            # to prevent double-refund on UNCLAIMED→RETURNED transitions.
+            if new_payout_status in ("failed", "unclaimed") and not already_refunded:
                 await db.users.update_one(
                     {"user_id": target_user},
                     {"$inc": {"pending_balance_usd": amount}},
                 )
-            elif new_payout_status == "paid":
+            elif new_payout_status == "paid" and not already_paid:
                 # Already incremented at dispatch in mock mode; only
                 # increment for non-mock here.
                 if batch_doc.get("mode") != "mock":
