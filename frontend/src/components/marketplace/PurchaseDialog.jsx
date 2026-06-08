@@ -40,6 +40,7 @@ export const PurchaseDialog = ({ listing, onClose }) => {
 
   const containerRef = useRef(null);
   const dropinRef = useRef(null);
+  const pollRef = useRef(null);
 
   const price = Number(listing.price_usd || 0);
   const fee = (price * PLATFORM_FEE_PCT) / 100;
@@ -69,20 +70,28 @@ export const PurchaseDialog = ({ listing, onClose }) => {
           return;
         }
         dropinRef.current = instance;
-        // Subscribe to validity events so the Pay button reflects the
-        // *actual* state of the iframe, not just initialisation.
-        // `isPaymentMethodRequestable()` covers the case where Drop-in
-        // restored a saved payment method (Apple Pay / vaulted card)
-        // before our listener attaches.
-        if (instance.isPaymentMethodRequestable()) {
-          setPaymentMethodReady(true);
-        }
-        instance.on("paymentMethodRequestable", () => {
-          setPaymentMethodReady(true);
-        });
-        instance.on("noPaymentMethodRequestable", () => {
-          setPaymentMethodReady(false);
-        });
+        // Subscribe to validity events for fast UI feedback.
+        // NOTE: Drop-in only emits these events on edge transitions —
+        // a subscriber attached *after* the form has already become
+        // valid never sees the event. We also poll below as a safety
+        // net, and we don't gate the Pay button on this flag (the
+        // submit handler asks Drop-in directly via
+        // `requestPaymentMethod()` which is the source of truth).
+        const refreshReady = () => {
+          try {
+            setPaymentMethodReady(instance.isPaymentMethodRequestable());
+          } catch {
+            /* instance torn down */
+          }
+        };
+        refreshReady();
+        instance.on("paymentMethodRequestable", refreshReady);
+        instance.on("noPaymentMethodRequestable", refreshReady);
+        // Belt-and-suspenders: poll until torn down. Drop-in sometimes
+        // misses event emission on Safari + first-time card entry, so
+        // the user can otherwise stare at a disabled button.
+        const poll = setInterval(refreshReady, 400);
+        pollRef.current = poll;
         setDropinReady(true);
       } catch (e) {
         if (!cancelled) {
@@ -95,6 +104,10 @@ export const PurchaseDialog = ({ listing, onClose }) => {
 
     return () => {
       cancelled = true;
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
       if (dropinRef.current) {
         dropinRef.current.teardown().catch(() => {});
         dropinRef.current = null;
@@ -115,7 +128,19 @@ export const PurchaseDialog = ({ listing, onClose }) => {
     setSubmitting(true);
     setError("");
     try {
-      const { nonce } = await dropinRef.current.requestPaymentMethod();
+      let nonce;
+      try {
+        const result = await dropinRef.current.requestPaymentMethod();
+        nonce = result.nonce;
+      } catch (rpmErr) {
+        // Drop-in throws when any card field is invalid/empty. Its
+        // own error message is generally helpful (e.g. "Please fill
+        // out a card number"). Surface it instead of failing silently.
+        const msg =
+          rpmErr?.message ||
+          "Please double-check the card details and try again.";
+        throw new Error(msg);
+      }
       const origin =
         typeof window !== "undefined" ? window.location.origin : "";
       const checkoutRes = await fetch(
@@ -261,7 +286,7 @@ export const PurchaseDialog = ({ listing, onClose }) => {
 
         <button
           type="submit"
-          disabled={submitting || !validEmail || !dropinReady || !paymentMethodReady}
+          disabled={submitting || !validEmail || !dropinReady}
           data-testid="purchase-submit-btn"
           className="w-full flex items-center justify-center gap-2 bg-zinc-100 text-zinc-950 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.2em] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
         >
@@ -273,7 +298,7 @@ export const PurchaseDialog = ({ listing, onClose }) => {
             : !validEmail
             ? "Enter email above"
             : !paymentMethodReady
-            ? "Complete card details"
+            ? `Pay $${price.toFixed(2)} (finish card details)`
             : `Pay $${price.toFixed(2)}`}
         </button>
 
