@@ -30,6 +30,12 @@ export const PurchaseDialog = ({ listing, onClose }) => {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [dropinReady, setDropinReady] = useState(false);
+  // True once Drop-in reports it has a fully-valid card collected.
+  // Braintree fires `paymentMethodRequestable` when the user has
+  // typed enough valid info; we use that — not just "is initialised"
+  // — to gate the Pay button. Without this, even a perfectly valid
+  // card leaves Pay disabled because we'd never know it was ready.
+  const [paymentMethodReady, setPaymentMethodReady] = useState(false);
   const [initError, setInitError] = useState("");
 
   const containerRef = useRef(null);
@@ -63,6 +69,20 @@ export const PurchaseDialog = ({ listing, onClose }) => {
           return;
         }
         dropinRef.current = instance;
+        // Subscribe to validity events so the Pay button reflects the
+        // *actual* state of the iframe, not just initialisation.
+        // `isPaymentMethodRequestable()` covers the case where Drop-in
+        // restored a saved payment method (Apple Pay / vaulted card)
+        // before our listener attaches.
+        if (instance.isPaymentMethodRequestable()) {
+          setPaymentMethodReady(true);
+        }
+        instance.on("paymentMethodRequestable", () => {
+          setPaymentMethodReady(true);
+        });
+        instance.on("noPaymentMethodRequestable", () => {
+          setPaymentMethodReady(false);
+        });
         setDropinReady(true);
       } catch (e) {
         if (!cancelled) {
@@ -241,12 +261,20 @@ export const PurchaseDialog = ({ listing, onClose }) => {
 
         <button
           type="submit"
-          disabled={submitting || !validEmail || !dropinReady}
+          disabled={submitting || !validEmail || !dropinReady || !paymentMethodReady}
           data-testid="purchase-submit-btn"
           className="w-full flex items-center justify-center gap-2 bg-zinc-100 text-zinc-950 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.2em] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
         >
           <ShoppingBag className="w-3.5 h-3.5" />
-          {submitting ? "Processing payment…" : `Pay $${price.toFixed(2)}`}
+          {submitting
+            ? "Processing payment…"
+            : !dropinReady
+            ? "Loading card form…"
+            : !validEmail
+            ? "Enter email above"
+            : !paymentMethodReady
+            ? "Complete card details"
+            : `Pay $${price.toFixed(2)}`}
         </button>
 
         <div className="font-mono text-[9px] text-zinc-600 text-center leading-relaxed">
