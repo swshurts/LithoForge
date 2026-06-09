@@ -103,7 +103,7 @@ class OptimizeIn(BaseModel):
     image_id: str
     width_mm: float = 100.0
     height_mm: float = 100.0
-    thickness_mm: float = 3.0
+    thickness_mm: float = 2.2
     border_mm: float = 2.0
     layer_height_mm: float = 0.12
     max_swaps: int = 5

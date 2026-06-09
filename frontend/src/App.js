@@ -22,9 +22,9 @@ import {
 const DEFAULT_CONFIG = {
   width_mm: 100,
   height_mm: 100,
-  thickness_mm: 3.6,
+  thickness_mm: 2.2,
   border_mm: 2,
-  layer_height_mm: 0.12,
+  layer_height_mm: 0.08,
   max_swaps: 5,
   geometry: "flat",
   curve_radius_mm: 80,

@@ -127,11 +127,91 @@ def _filament_chroma(filaments: List[Filament]) -> np.ndarray:
     return np.sqrt(fil_lab[:, 1] ** 2 + fil_lab[:, 2] ** 2)
 
 
+def _clamp_to_caps(alloc: List[int], caps: List[int], total: int) -> List[int]:
+    """Clamp each allocation entry to its TD cap, then redistribute the
+    overflow to filaments that still have headroom (proportional to
+    existing allocation so the visual mix is preserved).
+
+    If no filament has headroom (e.g. caps too tight to hit `total`),
+    the function gives up on the budget — the print will simply be
+    slightly thinner than requested, which is the correct lithophane
+    behaviour rather than padding with opaque layers.
+    """
+    result = list(alloc)
+    while True:
+        overflow = sum(max(0, result[i] - caps[i]) for i in range(len(result)))
+        if overflow == 0:
+            break
+        # Clamp every over-cap entry.
+        for i in range(len(result)):
+            result[i] = min(result[i], caps[i])
+        # Redistribute overflow to filaments with headroom.
+        headroom = [caps[i] - result[i] for i in range(len(result))]
+        if sum(headroom) == 0:
+            break
+        total_curr = sum(result)
+        needed = total - total_curr
+        if needed <= 0:
+            break
+        # Weight by current allocation so dominant filaments soak up
+        # the redistributed budget first.
+        weights = np.array(result, dtype=np.float64) + 1e-6
+        weights *= np.array(headroom, dtype=np.float64) > 0
+        if weights.sum() == 0:
+            break
+        share = weights / weights.sum() * needed
+        floors = np.floor(share).astype(int)
+        for i in range(len(result)):
+            add = min(floors[i], headroom[i])
+            result[i] += int(add)
+        # Distribute fractional leftovers to filaments still with headroom.
+        fracs = share - floors
+        order = np.argsort(-fracs)
+        remaining = total - sum(result)
+        for idx in order:
+            if remaining <= 0:
+                break
+            if result[idx] < caps[idx]:
+                result[idx] += 1
+                remaining -= 1
+        # If headroom hit zero for every filament we exit on next iteration.
+        if remaining == sum(max(0, result[i] - caps[i]) for i in range(len(result))):
+            break
+    return result
+
+
+def _td_layer_caps(
+    filaments: List[Filament],
+    layer_height_mm: float,
+    td_multiplier: float = 1.5,
+) -> List[int]:
+    """Per-filament max-layer cap derived from Transmission Distance.
+
+    Beyond ~1.5×TD a filament has absorbed >75% of incident light per
+    channel and additional layers only darken the print without
+    changing the perceived hue. Capping each filament here is the
+    single most important fix for back-lit lithophane brightness.
+
+    Returns a list of integer caps (always >= min_per_color), one per
+    input filament.
+    """
+    caps: List[int] = []
+    for f in filaments:
+        td = max(f.td, 0.05)
+        raw = td_multiplier * td / max(layer_height_mm, 0.01)
+        # Subtract a tiny epsilon before ceil so 0.8 * 1.5 / 0.08 = 15.0000…2
+        # rounds to 15 (the mathematical answer), not 16.
+        caps.append(max(1, int(math.ceil(raw - 1e-9))))
+    return caps
+
+
 def allocate_layers(
     image_rgb: np.ndarray,
     filaments: List[Filament],
     total_layers: int,
     min_per_color: int = 1,
+    layer_height_mm: float = 0.08,
+    td_cap_multiplier: float = 1.5,
 ) -> List[int]:
     """Distribute `total_layers` across the provided filaments with a
     chroma-aware strategy.
@@ -143,7 +223,11 @@ def allocate_layers(
 
     1. Cap W / K / very-low-chroma filaments at a small fixed budget
        (scaled with total thickness so very tall prints still leave room).
-    2. Split the remaining layer budget among the chromatic filaments,
+    2. Cap EVERY filament at ~td_cap_multiplier × TD layers — beyond
+       that thickness the filament is fully saturated and additional
+       layers only block back-light without changing colour. Default
+       1.5× matches HueForge's "max useful thickness" rule.
+    3. Split the remaining layer budget among the chromatic filaments,
        weighted by how much each is actually "useful" for the image
        (histogram of nearest-filament match) boosted by its chroma so
        primaries aren't starved when the image has muted midtones.
@@ -151,13 +235,17 @@ def allocate_layers(
     n = len(filaments)
     if n == 0:
         return []
+
+    td_caps = _td_layer_caps(filaments, layer_height_mm, td_cap_multiplier)
+
     if n * min_per_color >= total_layers:
         base = total_layers // n
         rem = total_layers - base * n
         alloc = [base] * n
         for i in range(rem):
             alloc[i] += 1
-        return alloc
+        # Even the even-split path must respect TD caps.
+        return _clamp_to_caps(alloc, td_caps, total_layers)
 
     chroma = _filament_chroma(filaments)
     # Anything below this chroma (W, K, Grey, very muted) is treated as
@@ -186,57 +274,82 @@ def allocate_layers(
     remaining = total_layers - sum(alloc)
 
     # Phase 1: give neutral filaments at most (neutral_cap - min_per_color)
-    # extra layers based on their histogram presence.
+    # extra layers based on their histogram presence — bounded by TD cap.
     for i in range(n):
         if neutral_mask[i] and remaining > 0:
             extra = min(
                 neutral_cap - min_per_color,
+                td_caps[i] - alloc[i],
                 max(0, int(round(weighted[i] / max(1e-9, weighted.sum())
                                  * total_layers))),
             )
-            extra = min(extra, remaining)
+            extra = max(0, min(extra, remaining))
             alloc[i] += extra
             remaining -= extra
 
-    # Phase 2: distribute all remaining layers across chromatic filaments.
+    # Phase 2: distribute all remaining layers across chromatic filaments,
+    # respecting per-filament TD caps so a single low-TD filament can't
+    # snowball into a brightness-killing slab.
     chromatic_idx = [i for i in range(n) if not neutral_mask[i]]
     if chromatic_idx and remaining > 0:
-        w = weighted[chromatic_idx]
-        if w.sum() <= 0:
-            # No histogram info — even split.
-            per = remaining // len(chromatic_idx)
-            for i in chromatic_idx:
-                alloc[i] += per
-                remaining -= per
-            for i in chromatic_idx:
-                if remaining <= 0:
-                    break
-                alloc[i] += 1
-                remaining -= 1
-        else:
+        # Iterate: each pass spreads what we can, then re-checks caps.
+        for _ in range(4):
+            if remaining <= 0:
+                break
+            open_idx = [i for i in chromatic_idx if alloc[i] < td_caps[i]]
+            if not open_idx:
+                break
+            w = weighted[open_idx]
+            if w.sum() <= 0:
+                per = max(1, remaining // len(open_idx))
+                for i in open_idx:
+                    take = min(per, td_caps[i] - alloc[i], remaining)
+                    alloc[i] += take
+                    remaining -= take
+                    if remaining <= 0:
+                        break
+                continue
             raw = w / w.sum() * remaining
-            floors = np.floor(raw).astype(int)
-            for idx, i in enumerate(chromatic_idx):
-                alloc[i] += int(floors[idx])
-            remaining = total_layers - sum(alloc)
-            # distribute fractional leftovers greedily
-            fracs = raw - floors
-            order = np.argsort(-fracs)
-            for k in range(len(chromatic_idx)):
-                if remaining <= 0:
-                    break
-                alloc[chromatic_idx[order[k % len(chromatic_idx)]]] += 1
-                remaining -= 1
+            for idx, i in enumerate(open_idx):
+                want = int(math.floor(raw[idx]))
+                take = min(want, td_caps[i] - alloc[i], remaining)
+                alloc[i] += take
+                remaining -= take
+            # Distribute fractional leftovers greedily to filaments that
+            # still have headroom.
+            if remaining > 0:
+                fracs = raw - np.floor(raw)
+                order = np.argsort(-fracs)
+                for k in order:
+                    if remaining <= 0:
+                        break
+                    i = open_idx[int(k)]
+                    if alloc[i] < td_caps[i]:
+                        alloc[i] += 1
+                        remaining -= 1
 
-    # Phase 3: anything still left (e.g. no chromatic filaments) goes to
-    # whichever filament has the highest fractional demand.
+    # Phase 3: anything still left (e.g. chromatic caps all hit) goes to
+    # whichever NEUTRAL filament still has headroom — preserves the
+    # remaining budget without overshooting any single filament's TD.
     if remaining > 0:
         order = np.argsort(-weighted)
-        i = 0
-        while remaining > 0:
-            alloc[int(order[i % n])] += 1
-            remaining -= 1
-            i += 1
+        guard = 0
+        while remaining > 0 and guard < total_layers * 4:
+            placed = False
+            for i_arr in order:
+                i = int(i_arr)
+                if alloc[i] < td_caps[i]:
+                    alloc[i] += 1
+                    remaining -= 1
+                    placed = True
+                    if remaining <= 0:
+                        break
+            if not placed:
+                # Every filament hit its TD cap. The print is now thinner
+                # than the user asked for, which is the correct
+                # behaviour — better than an opaque slab.
+                break
+            guard += 1
     return alloc
 
 
@@ -268,7 +381,7 @@ def _evaluate_order(
 ) -> Tuple[float, np.ndarray, np.ndarray, List[int], np.ndarray]:
     """Build LUT for `order` and match every pixel. Returns
     (mean_delta_e, layer_map_flat, min_d_flat, allocation, lut_clipped)."""
-    allocation = allocate_layers(arr, order, total_layers)
+    allocation = allocate_layers(arr, order, total_layers, layer_height_mm=layer_height_mm)
     lut = simulate_stack(allocation, order, layer_height_mm)
     lut_clipped = np.clip(lut, 0.0, 1.0)
     lut_lab = skcolor.rgb2lab(lut_clipped.reshape(-1, 1, 3)).reshape(-1, 3)
@@ -568,7 +681,10 @@ def optimize(
 
     # Always use one allocation (histogram-based on the user's palette).
     # Allocation is a function of the palette, not the order.
-    allocation = allocate_layers(arr, base_palette, total_layers)
+    allocation = allocate_layers(
+        arr, base_palette, total_layers,
+        layer_height_mm=layer_height_mm,
+    )
 
     if auto_order:
         candidates = _generate_candidate_orders(base_palette)

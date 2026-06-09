@@ -15,7 +15,7 @@ import { PresetManager } from "./PresetManager";
 import { HelpHint } from "./HelpHint";
 import { PrinterSelect } from "./PrinterSelect";
 
-const Row = ({ label, value, unit, children, testid }) => (
+const Row = ({ label, value, unit, children, testid, hint }) => (
   <div className="space-y-2" data-testid={testid}>
     <div className="flex items-center justify-between">
       <Label className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
@@ -27,6 +27,14 @@ const Row = ({ label, value, unit, children, testid }) => (
       </span>
     </div>
     {children}
+    {hint && (
+      <div
+        className="text-[9px] font-mono text-zinc-500 leading-tight pt-0.5"
+        data-testid={testid ? `${testid}-hint` : undefined}
+      >
+        {hint}
+      </div>
+    )}
   </div>
 );
 
@@ -264,13 +272,20 @@ export const ConfigPanel = ({
             value={config.thickness_mm.toFixed(2)}
             unit="mm"
             testid="row-thickness"
+            hint={
+              config.thickness_mm > 2.6
+                ? "Above 2.5 mm absorbs most back-light"
+                : config.thickness_mm < 1.8
+                  ? "Below 1.8 mm loses color depth"
+                  : "Recommended 2.0–2.5 mm for color lithophanes"
+            }
           >
             <Slider
               data-testid="thickness-slider"
               value={[config.thickness_mm]}
               onValueChange={([v]) => update("thickness_mm", v)}
               min={1.5}
-              max={6}
+              max={4}
               step={0.05}
               disabled={disabled}
             />
