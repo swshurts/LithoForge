@@ -180,6 +180,71 @@ def _clamp_to_caps(alloc: List[int], caps: List[int], total: int) -> List[int]:
     return result
 
 
+def _stack_luminance(alloc: List[int], filaments: List[Filament], layer_height_mm: float) -> float:
+    """Perceptual luminance (Rec.709 Y) of the deepest pixel after passing
+    through the full layer stack. Returns 0..1 — 0.08 == 8% bright."""
+    lut = simulate_stack(alloc, filaments, layer_height_mm)
+    rgb = lut[-1]
+    # Rec.709 luminance — matches what the eye sees as "brightness".
+    return float(0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2])
+
+
+def _enforce_brightness_floor(
+    alloc: List[int],
+    filaments: List[Filament],
+    layer_height_mm: float,
+    min_brightness: float,
+    min_per_color: int = 1,
+    max_iterations: int = 200,
+) -> List[int]:
+    """Greedily swap opaque-filament layers for the highest-TD filament
+    until predicted deepest-pixel brightness >= min_brightness, OR no
+    progress can be made.
+
+    Strategy each iteration:
+      1. Pick the filament with the LOWEST TD whose alloc > min_per_color
+         (this is the most opaque filament we're allowed to thin).
+      2. Pick the filament with the HIGHEST TD whose alloc < td_cap
+         (most translucent filament with room to grow — typically white).
+      3. Move one layer from #1 → #2 and re-measure brightness.
+
+    Stops when no source filament can be thinned OR no sink filament has
+    headroom OR brightness target is met. The result is "the same total
+    thickness, redistributed for maximum back-light".
+    """
+    if not filaments or sum(alloc) == 0:
+        return alloc
+    result = list(alloc)
+    if _stack_luminance(result, filaments, layer_height_mm) >= min_brightness:
+        return result
+    # Sort filaments by TD ascending (most opaque first).
+    by_td_asc = sorted(range(len(filaments)), key=lambda i: filaments[i].td)
+    by_td_desc = list(reversed(by_td_asc))
+
+    for _ in range(max_iterations):
+        # Sink: highest-TD filament with headroom (cap from 1.5×TD to give
+        # the optimizer some slack — exceeding 1.0×TD for high-TD whites
+        # is fine because they're translucent anyway).
+        sink_caps = _td_layer_caps(filaments, layer_height_mm, td_multiplier=1.5)
+        sink = next(
+            (i for i in by_td_desc if result[i] < sink_caps[i]),
+            None,
+        )
+        # Source: lowest-TD filament with layers to spare (> min_per_color).
+        source = next(
+            (i for i in by_td_asc if result[i] > min_per_color and i != sink),
+            None,
+        )
+        if sink is None or source is None:
+            break
+        result[source] -= 1
+        result[sink] += 1
+        if _stack_luminance(result, filaments, layer_height_mm) >= min_brightness:
+            break
+    return result
+
+
+
 def _td_layer_caps(
     filaments: List[Filament],
     layer_height_mm: float,
@@ -211,7 +276,8 @@ def allocate_layers(
     total_layers: int,
     min_per_color: int = 1,
     layer_height_mm: float = 0.08,
-    td_cap_multiplier: float = 1.5,
+    td_cap_multiplier: float = 1.0,
+    min_brightness: float = 0.08,
 ) -> List[int]:
     """Distribute `total_layers` across the provided filaments with a
     chroma-aware strategy.
@@ -350,6 +416,14 @@ def allocate_layers(
                 # behaviour — better than an opaque slab.
                 break
             guard += 1
+
+    # Phase 4: brightness-floor enforcement. If the deepest pixel of the
+    # stack would be darker than `min_brightness`, swap opaque layers for
+    # the highest-TD filament until we hit the floor (or run out of swaps).
+    if min_brightness > 0:
+        alloc = _enforce_brightness_floor(
+            alloc, filaments, layer_height_mm, min_brightness, min_per_color,
+        )
     return alloc
 
 
@@ -370,6 +444,7 @@ class OptimizeResult:
     delta_e_p95: float
     swap_heights_mm: List[float]   # Z heights at which colour changes
     swap_colors: List[str]         # hex of the colour active *above* the swap
+    light_throughput_pct: float = 0.0  # Predicted back-light brightness 0..100
 
 
 def _evaluate_order(
@@ -620,6 +695,7 @@ def _optimize_painting(
         delta_e_p95=float(np.percentile(min_d, 95)),
         swap_heights_mm=swap_heights,
         swap_colors=swap_colors,
+        light_throughput_pct=100.0 * _stack_luminance(list(allocation), ordered, layer_height_mm),
     )
 
 
@@ -739,6 +815,7 @@ def optimize(
         delta_e_p95=float(np.percentile(min_d_flat, 95)),
         swap_heights_mm=swap_heights,
         swap_colors=swap_colors,
+        light_throughput_pct=100.0 * _stack_luminance(list(allocation), used_filaments, layer_height_mm),
     )
 
 

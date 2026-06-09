@@ -42,6 +42,7 @@ from marketplace import build_marketplace_router
 from marketplace_checkout import build_checkout_router, resolve_download_token
 from marketplace_braintree import build_braintree_router
 from admin import build_admin_router, build_require_admin
+from sso_bridge import build_sso_bridge_router
 from paypal_payouts import (
     build_admin_payouts_router,
     build_paypal_webhook_router,
@@ -126,6 +127,7 @@ class OptimizeOut(BaseModel):
     heightmap_png_base64: str
     delta_e_mean: float
     delta_e_p95: float
+    light_throughput_pct: float = 0.0  # Predicted back-light brightness 0..100
     total_layers: int
     layer_allocation: List[int]
     filaments: List[Dict[str, Any]]
@@ -414,6 +416,7 @@ async def optimize_endpoint(
         heightmap_png_base64=heightmap,
         delta_e_mean=round(result.delta_e_mean, 3),
         delta_e_p95=round(result.delta_e_p95, 3),
+        light_throughput_pct=round(result.light_throughput_pct, 1),
         total_layers=result.total_layers,
         layer_allocation=result.layer_allocation,
         filaments=[{"name": f.name, "hex": f.hex, "td": f.td}
@@ -623,6 +626,7 @@ marketplace_router = build_marketplace_router(db, require_user_dep, get_current_
 checkout_router = build_checkout_router(db)
 braintree_router = build_braintree_router(db)
 admin_router = build_admin_router(db, require_user_dep)
+sso_bridge_router = build_sso_bridge_router(db, get_current_user_dep)
 payouts_router = build_payouts_router(db, require_user_dep)
 require_admin_dep = build_require_admin(require_user_dep)
 admin_payouts_router = build_admin_payouts_router(db, require_admin_dep)
@@ -635,6 +639,7 @@ app.include_router(marketplace_router, prefix="/api")
 app.include_router(checkout_router, prefix="/api")
 app.include_router(braintree_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
+app.include_router(sso_bridge_router, prefix="/api")
 app.include_router(admin_payouts_router, prefix="/api")
 app.include_router(payouts_router, prefix="/api")
 app.include_router(paypal_webhook_router, prefix="/api")

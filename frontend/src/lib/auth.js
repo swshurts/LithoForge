@@ -15,6 +15,7 @@ import React, {
   useState,
 } from "react";
 import { api } from "./api";
+import { fanOutSsoBridge } from "./ssoBridge";
 
 const AuthCtx = createContext({
   user: null,
@@ -129,6 +130,10 @@ export const AuthCallbackHandler = ({ onComplete }) => {
         // Pull the just-set cookie into the AuthProvider so the UI
         // updates without a page reload.
         await refresh();
+        // Fan out to peer apps (ForgeSlicer) so the user lands
+        // signed-in on the sister apps too. Non-blocking; failures
+        // are swallowed inside the helper.
+        fanOutSsoBridge();
       } catch {
         /* fall through — user will see anonymous state */
       } finally {

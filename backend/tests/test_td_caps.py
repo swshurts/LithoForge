@@ -45,44 +45,94 @@ def _sepia_image(h=64, w=64):
 class TestTDCaps:
     def test_td_caps_basic_math(self):
         fils = _brown_palette()
-        caps = _td_layer_caps(fils, layer_height_mm=0.08, td_multiplier=1.5)
-        # White: 1.5 * 5.0 / 0.08 = 93.75 → ceil 94
-        assert caps[0] == 94
-        # Purple: 1.5 * 1.3 / 0.08 = 24.375 → ceil 25
-        assert caps[1] == 25
-        # Brown: 1.5 * 1.2 / 0.08 = 22.5 → ceil 23
-        assert caps[2] == 23
-        # Key: 1.5 * 0.8 / 0.08 = 15
-        assert caps[3] == 15
+        # Default 1.0×TD multiplier (matches new allocate_layers default).
+        caps_10 = _td_layer_caps(fils, layer_height_mm=0.08, td_multiplier=1.0)
+        # White: 1.0 * 5.0 / 0.08 = 62.5 → ceil 63
+        assert caps_10[0] == 63
+        # Brown: 1.0 * 1.2 / 0.08 = 15.0 → 15
+        assert caps_10[2] == 15
+        # Key: 1.0 * 0.8 / 0.08 = 10.0 → 10
+        assert caps_10[3] == 10
+        # Sanity check: the looser 1.5× multiplier (still used inside the
+        # brightness-floor swapper for the white sink) yields larger caps.
+        caps_15 = _td_layer_caps(fils, layer_height_mm=0.08, td_multiplier=1.5)
+        assert caps_15[2] == 23
+        assert caps_15[3] == 15
 
     def test_brown_no_longer_dominates(self):
         """At 2.2 mm total (28 layers @ 0.08 mm) with the sepia image,
-        brown should NEVER take 21+ layers any more."""
+        brown should NEVER take 19+ layers any more (user's actual
+        complaint was 19 brown layers in their reprint)."""
         fils = _brown_palette()
         arr = _sepia_image()
         alloc = allocate_layers(
             arr, fils, total_layers=28, layer_height_mm=0.08
         )
         brown_layers = alloc[2]
-        # Hard cap: regardless of how brown-dominant the image is.
-        assert brown_layers <= 23, (
-            f"Brown leaked past TD cap: {brown_layers} layers (cap=23)"
+        # Hard cap: 1.0×TD = 15 layers for brown. AND the 8% brightness
+        # floor enforcer should keep it materially below that for the
+        # sepia case (down to ~14).
+        assert brown_layers <= 15, (
+            f"Brown leaked past 1.0×TD cap: {brown_layers} layers (cap=15)"
         )
-        # Sanity: the rest of the budget went somewhere.
         assert sum(alloc) == 28
 
-    def test_chromatic_total_does_not_explode_at_thin_print(self):
-        """At 2.2 mm budget the allocator should stay near-budget AND
-        respect every TD cap."""
+    def test_brightness_floor_enforced(self):
+        """For a sepia image, the new allocator must guarantee at least
+        8% deepest-pixel luminance — the user's complaint was 5.2%."""
+        from lithophane import _stack_luminance
         fils = _brown_palette()
         arr = _sepia_image()
         alloc = allocate_layers(
             arr, fils, total_layers=28, layer_height_mm=0.08
         )
+        brightness = _stack_luminance(alloc, fils, 0.08)
+        assert brightness >= 0.08, (
+            f"Brightness floor missed: {brightness*100:.2f}% (target ≥8%)"
+        )
+
+    def test_brightness_floor_can_be_disabled(self):
+        """The brightness-floor knob should change the allocation when
+        we ask for an aggressive target. Compare floor=0 vs floor=0.25
+        (25% — well above what the 1.0×TD cap alone produces)."""
+        from lithophane import _stack_luminance
+        fils = [
+            Filament("White", "#f5f5f5", td=5.0),
+            Filament("Brown", "#3a2010", td=0.7),
+        ]
+        arr = np.full((32, 32, 3), [0.30, 0.20, 0.10], dtype=np.float64)
+        alloc_no_floor = allocate_layers(
+            arr, fils, total_layers=28, layer_height_mm=0.08,
+            min_brightness=0.0,
+        )
+        alloc_floor = allocate_layers(
+            arr, fils, total_layers=28, layer_height_mm=0.08,
+            min_brightness=0.25,
+        )
+        b_no_floor = _stack_luminance(alloc_no_floor, fils, 0.08)
+        b_floor = _stack_luminance(alloc_floor, fils, 0.08)
+        # An aggressive 25% target must brighten the print.
+        assert b_floor > b_no_floor + 1e-3, (
+            f"Floor pass did not brighten: {b_no_floor:.3f} → {b_floor:.3f} "
+            f"(alloc_no_floor={alloc_no_floor}, alloc_floor={alloc_floor})"
+        )
+
+    def test_chromatic_total_does_not_explode_at_thin_print(self):
+        """At 2.2 mm budget the allocator should stay near-budget AND
+        respect every TD cap. After the brightness-floor pass we allow
+        the more relaxed 1.5×TD cap on the high-TD sink."""
+        fils = _brown_palette()
+        arr = _sepia_image()
+        alloc = allocate_layers(
+            arr, fils, total_layers=28, layer_height_mm=0.08
+        )
+        # Use the looser 1.5×TD cap as the absolute upper bound — the
+        # brightness floor pass is allowed to push high-TD whites up to
+        # 1.5×TD when rescuing dim prints.
         caps = _td_layer_caps(fils, layer_height_mm=0.08, td_multiplier=1.5)
         for i, n in enumerate(alloc):
             assert n <= caps[i], (
-                f"{fils[i].name} exceeded TD cap: {n} > {caps[i]}"
+                f"{fils[i].name} exceeded 1.5×TD cap: {n} > {caps[i]}"
             )
 
     def test_light_throughput_improves_vs_old_distribution(self):
@@ -124,17 +174,18 @@ class TestTDCaps:
     def test_high_td_white_can_absorb_overflow(self):
         """When chromatic filaments hit their caps, the leftover budget
         flows to high-TD neutrals (white, here) — never overshooting
-        another filament's TD cap."""
+        the 1.5× sink cap."""
         # Custom palette: brown cap is very low; budget intentionally high.
         fils = [
             Filament("White", "#f5f5f5", td=5.0),
-            Filament("Brown", "#5a3a22", td=0.8),  # cap ≈ 15 layers
+            Filament("Brown", "#5a3a22", td=0.8),  # 1.0×TD cap = 10 layers
         ]
         arr = np.full((32, 32, 3), [0.45, 0.30, 0.18], dtype=np.float64)
         alloc = allocate_layers(arr, fils, total_layers=50, layer_height_mm=0.08)
-        # Brown must be capped.
+        # Brown capped at 1.5×TD (because the brightness floor's
+        # 1.5×TD sink cap is the absolute ceiling) → 15 layers.
         assert alloc[1] <= 15
-        # White absorbed the rest (or hit its own much-larger cap).
+        # White absorbed the rest.
         assert alloc[0] >= 35
 
 

@@ -24,6 +24,51 @@ const DeltaBadge = ({ label, value, accent }) => (
   </div>
 );
 
+/** Predicted back-light brightness — green ≥8%, amber 4-8%, red <4%. */
+const ThroughputBadge = ({ value }) => {
+  const pct = Math.max(0, Math.min(100, value));
+  const accent = pct >= 8 ? "#22c55e" : pct >= 4 ? "#f59e0b" : "#ef4444";
+  const verdict =
+    pct >= 12
+      ? "Bright"
+      : pct >= 8
+        ? "Recommended"
+        : pct >= 4
+          ? "Dim — consider reducing thickness"
+          : "Opaque — increase translucent filaments";
+  return (
+    <div
+      className="panel-muted p-3 space-y-1"
+      data-testid="light-throughput-badge"
+    >
+      <div className="flex items-center justify-between">
+        <div className="text-[9px] uppercase tracking-[0.18em] text-zinc-500">
+          Light throughput
+        </div>
+        <div
+          className="text-[9px] font-mono uppercase tracking-[0.15em]"
+          style={{ color: accent }}
+        >
+          {pct >= 8 ? "OK" : pct >= 4 ? "LOW" : "BAD"}
+        </div>
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span
+          className="font-mono text-2xl font-bold tabular-nums"
+          style={{ color: accent }}
+          data-testid="light-throughput-value"
+        >
+          {pct.toFixed(1)}
+        </span>
+        <span className="font-mono text-[10px] text-zinc-500">% (deepest)</span>
+      </div>
+      <div className="font-mono text-[9px] text-zinc-500 leading-tight">
+        {verdict}
+      </div>
+    </div>
+  );
+};
+
 const quality = (de) => {
   if (de < 2) return { label: "IMPERCEPTIBLE", color: "#22c55e" };
   if (de < 5) return { label: "VERY CLOSE", color: "#84cc16" };
@@ -294,6 +339,9 @@ export const StatsPanel = ({
               Run optimization to see ΔE stats
             </div>
           </div>
+        )}
+        {result && typeof result.light_throughput_pct === "number" && (
+          <ThroughputBadge value={result.light_throughput_pct} />
         )}
       </div>
 
