@@ -400,6 +400,107 @@ def _build_mesh(
 # Per-filament slab meshing (for colour-aware 3MF export)
 # ---------------------------------------------------------------------------
 
+def _emit_flat_top_bottom_faces(top, cell_ok, ti, bi, faces):
+    """Emit the top + bottom triangle list for flat-mode slabs using
+    greedy rectangle merging on the top surface (lossless) and on the
+    bottom (always a single flat rect group)."""
+    z_top_vert = top[..., 2]
+    for (r0, c0, r1, c1, is_flat) in _greedy_top_rects(z_top_vert, cell_ok):
+        if is_flat:
+            a, b = ti(r0, c0), ti(r0, c1 + 1)
+            c, d = ti(r1 + 1, c1 + 1), ti(r1 + 1, c0)
+        else:
+            a, b = ti(r0, c0), ti(r0, c0 + 1)
+            c, d = ti(r0 + 1, c0 + 1), ti(r0 + 1, c0)
+        faces.append((a, b, c))
+        faces.append((a, c, d))
+    for (r0, c0, r1, c1) in _bottom_rects(cell_ok):
+        ba, bb = bi(r0, c0), bi(r0, c1 + 1)
+        bc, bd = bi(r1 + 1, c1 + 1), bi(r1 + 1, c0)
+        faces.append((ba, bc, bb))
+        faces.append((ba, bd, bc))
+
+
+def _emit_curved_top_bottom_faces(h, w, cell_ok, ti, bi, faces):
+    """Per-pixel top + bottom for curved / disc slabs. Greedy meshing
+    is unsafe here because each pixel's z varies along a curve."""
+    for y in range(h - 1):
+        for x in range(w - 1):
+            if not cell_ok[y, x]:
+                continue
+            a, b = ti(y, x), ti(y, x + 1)
+            c, d = ti(y + 1, x + 1), ti(y + 1, x)
+            faces.append((a, b, c))
+            faces.append((a, c, d))
+            ba, bb = bi(y, x), bi(y, x + 1)
+            bc, bd = bi(y + 1, x + 1), bi(y + 1, x)
+            faces.append((ba, bc, bb))
+            faces.append((ba, bd, bc))
+
+
+def _emit_perimeter_walls(h, w, cell_ok, ti, bi, faces):
+    """External slab walls — wherever a cell's neighbour is invalid (or
+    we're at the image boundary), emit one quad bridging top→bottom
+    along that cell edge."""
+    def add_wall(t0_idx, t1_idx, b0_idx, b1_idx):
+        faces.append((t0_idx, b0_idx, b1_idx))
+        faces.append((t0_idx, b1_idx, t1_idx))
+
+    for y in range(h - 1):
+        for x in range(w - 1):
+            if not cell_ok[y, x]:
+                continue
+            if y == 0 or not cell_ok[y - 1, x]:
+                add_wall(ti(y, x + 1), ti(y, x), bi(y, x + 1), bi(y, x))
+            if y == h - 2 or not cell_ok[y + 1, x]:
+                add_wall(ti(y + 1, x), ti(y + 1, x + 1),
+                         bi(y + 1, x), bi(y + 1, x + 1))
+            if x == 0 or not cell_ok[y, x - 1]:
+                add_wall(ti(y, x), ti(y + 1, x), bi(y, x), bi(y + 1, x))
+            if x == w - 2 or not cell_ok[y, x + 1]:
+                add_wall(ti(y + 1, x + 1), ti(y, x + 1),
+                         bi(y + 1, x + 1), bi(y, x + 1))
+
+
+def _emit_step_walls(h, w, top, cell_ok, half_layer_mm, ti, faces):
+    """Internal step walls — when two horizontally or vertically
+    adjacent cells have different top z's (by more than half a layer),
+    emit two triangles closing the vertical gap so the topmost slab
+    reproduces the lithophane silhouette."""
+    # Step walls along x (column transitions).
+    for y in range(h - 1):
+        for x in range(w - 2):
+            if not cell_ok[y, x] or not cell_ok[y, x + 1]:
+                continue
+            z_left = top[y, x + 1, 2]
+            z_right = top[y, x + 2, 2]
+            if abs(z_left - z_right) <= half_layer_mm:
+                continue
+            t0, t1 = ti(y, x + 1), ti(y + 1, x + 1)
+            if z_left > z_right:
+                faces.append((t0, t1, ti(y + 1, x + 2)))
+                faces.append((t0, ti(y + 1, x + 2), ti(y, x + 2)))
+            else:
+                faces.append((t0, ti(y, x + 2), ti(y + 1, x + 2)))
+                faces.append((t0, ti(y + 1, x + 2), t1))
+    # Step walls along y (row transitions).
+    for y in range(h - 2):
+        for x in range(w - 1):
+            if not cell_ok[y, x] or not cell_ok[y + 1, x]:
+                continue
+            z_up = top[y + 1, x, 2]
+            z_dn = top[y + 2, x, 2]
+            if abs(z_up - z_dn) <= half_layer_mm:
+                continue
+            t0, t1 = ti(y + 1, x), ti(y + 1, x + 1)
+            if z_up > z_dn:
+                faces.append((t0, ti(y + 2, x + 1), t1))
+                faces.append((t0, ti(y + 2, x), ti(y + 2, x + 1)))
+            else:
+                faces.append((t0, t1, ti(y + 2, x + 1)))
+                faces.append((t0, ti(y + 2, x + 1), ti(y + 2, x)))
+
+
 def _build_slab_mesh(
     clipped_layers: np.ndarray,
     z_floor_mm: float,
@@ -408,26 +509,20 @@ def _build_slab_mesh(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Watertight slab mesh: each pixel rises `clipped_layers[r,c]`
     layer-heights above `z_floor_mm`. Pixels where `clipped_layers == 0`
-    are absent (no geometry contributed). Used by the per-colour 3MF
-    writer so every filament gets its own watertight `<object>`.
+    are absent. Used by the per-colour 3MF writer so every filament
+    gets its own watertight `<object>`.
 
-    Emits:
-        - top    triangles (per-pixel z = floor + clipped*lh)
-        - bottom triangles (flat at z = floor)
-        - perimeter side walls where the slab footprint ends
-        - "step" side walls between two adjacent valid pixels whose
-           clipped heights differ (so the topmost filament's slab
-           reproduces the original lithophane silhouette).
+    Output triangles split across four helpers — see each one's docstring:
+        - top/bottom (flat-mode greedy OR curved per-pixel)
+        - perimeter walls (where a slab footprint ends)
+        - step walls (between adjacent valid pixels with differing z's)
     """
     h, w = clipped_layers.shape
 
-    # Build a per-pixel "synthetic layer_map" we can pass through
-    # _build_vertices. Pixels where this filament is absent get z=0 too
-    # (they're masked out and never participate in faces).
+    # Per-pixel "synthetic layer_map" we can pass through _build_vertices.
+    # Pixels where this filament is absent get z=0 too (masked out anyway).
     synthetic = clipped_layers.astype(np.float64)
     top, bottom = _build_vertices(synthetic, layer_height_mm, geo)
-    # Translate vertices vertically to the slab's floor, and pin the
-    # bottom plane exactly at that floor (top inherits z_floor + clipped*lh).
     top[..., 2] += z_floor_mm
     bottom[..., 2] = z_floor_mm
 
@@ -435,7 +530,6 @@ def _build_slab_mesh(
     cell_ok = (
         valid[:-1, :-1] & valid[:-1, 1:] & valid[1:, :-1] & valid[1:, 1:]
     )
-    # Combine with disc circular mask if applicable.
     if geo.mode == "disc":
         disc_valid = _disc_valid_mask(h, w, geo)
         cell_ok &= (
@@ -458,118 +552,12 @@ def _build_slab_mesh(
     faces: List[Tuple[int, int, int]] = []
 
     if geo.mode == "flat":
-        # Greedy top + greedy bottom (both lossless). Walls + step walls
-        # stay per-pixel because they're already minimal: each external
-        # cell edge produces exactly one quad, and step walls only fire
-        # where adjacent tops differ.
-        z_top_vert = top[..., 2]
-        for (r0, c0, r1, c1, is_flat) in _greedy_top_rects(z_top_vert, cell_ok):
-            if is_flat:
-                a = ti(r0, c0)
-                b = ti(r0, c1 + 1)
-                c = ti(r1 + 1, c1 + 1)
-                d = ti(r1 + 1, c0)
-                faces.append((a, b, c))
-                faces.append((a, c, d))
-            else:
-                a = ti(r0, c0)
-                b = ti(r0, c0 + 1)
-                c = ti(r0 + 1, c0 + 1)
-                d = ti(r0 + 1, c0)
-                faces.append((a, b, c))
-                faces.append((a, c, d))
-        for (r0, c0, r1, c1) in _bottom_rects(cell_ok):
-            ba = bi(r0, c0)
-            bb = bi(r0, c1 + 1)
-            bc = bi(r1 + 1, c1 + 1)
-            bd = bi(r1 + 1, c0)
-            faces.append((ba, bc, bb))
-            faces.append((ba, bd, bc))
+        _emit_flat_top_bottom_faces(top, cell_ok, ti, bi, faces)
     else:
-        # Curved / disc — keep per-pixel tessellation for top + bottom.
-        for y in range(h - 1):
-            for x in range(w - 1):
-                if not cell_ok[y, x]:
-                    continue
-                a, b = ti(y, x), ti(y, x + 1)
-                c, d = ti(y + 1, x + 1), ti(y + 1, x)
-                faces.append((a, b, c))
-                faces.append((a, c, d))
-                ba, bb = bi(y, x), bi(y, x + 1)
-                bc, bd = bi(y + 1, x + 1), bi(y + 1, x)
-                faces.append((ba, bc, bb))
-                faces.append((ba, bd, bc))
+        _emit_curved_top_bottom_faces(h, w, cell_ok, ti, bi, faces)
 
-    # Side walls: any cell-edge where one neighbour is invalid produces
-    # an external wall; any internal edge where neighbouring tops differ
-    # by more than half a layer produces a step wall.
-    def add_wall(t0_idx, t1_idx, b0_idx, b1_idx, outward_right):
-        if outward_right:
-            faces.append((t0_idx, b0_idx, b1_idx))
-            faces.append((t0_idx, b1_idx, t1_idx))
-        else:
-            faces.append((t0_idx, b1_idx, b0_idx))
-            faces.append((t0_idx, t1_idx, b1_idx))
-
-    half_layer_mm = layer_height_mm * 0.5
-
-    for y in range(h - 1):
-        for x in range(w - 1):
-            if not cell_ok[y, x]:
-                continue
-            # External walls — emit one quad spanning the cell edge from
-            # slab floor up to slab top at that edge.
-            if y == 0 or not cell_ok[y - 1, x]:
-                add_wall(ti(y, x + 1), ti(y, x), bi(y, x + 1), bi(y, x), True)
-            if y == h - 2 or not cell_ok[y + 1, x]:
-                add_wall(ti(y + 1, x), ti(y + 1, x + 1),
-                         bi(y + 1, x), bi(y + 1, x + 1), True)
-            if x == 0 or not cell_ok[y, x - 1]:
-                add_wall(ti(y, x), ti(y + 1, x), bi(y, x), bi(y + 1, x), True)
-            if x == w - 2 or not cell_ok[y, x + 1]:
-                add_wall(ti(y + 1, x + 1), ti(y, x + 1),
-                         bi(y + 1, x + 1), bi(y, x + 1), True)
-
-    # Internal step walls — only meaningful for the topmost slab whose
-    # top follows the layer_map. We close vertical gaps between adjacent
-    # valid cells whose top z's differ.
-    for y in range(h - 1):
-        for x in range(w - 2):
-            if not cell_ok[y, x] or not cell_ok[y, x + 1]:
-                continue
-            z_left = top[y, x + 1, 2]
-            z_right = top[y, x + 2, 2]
-            if abs(z_left - z_right) > half_layer_mm:
-                # Step at the shared edge between cell(y,x) and cell(y,x+1)
-                # — both share vertices (y, x+1) and (y+1, x+1).
-                t0, t1 = ti(y, x + 1), ti(y + 1, x + 1)
-                # Need synthesised "fake bottom" verts that sit at the
-                # LOWER of the two tops; we already have those embedded
-                # as the actual top vertex on the lower-side cell.
-                # Simpler: emit two triangles between the two cells'
-                # shared edge tops + the lower neighbour's matching edge.
-                if z_left > z_right:
-                    # Wall faces +x (right neighbour is lower).
-                    faces.append((t0, t1, ti(y + 1, x + 2)))
-                    faces.append((t0, ti(y + 1, x + 2), ti(y, x + 2)))
-                else:
-                    faces.append((t0, ti(y, x + 2), ti(y + 1, x + 2)))
-                    faces.append((t0, ti(y + 1, x + 2), t1))
-
-    for y in range(h - 2):
-        for x in range(w - 1):
-            if not cell_ok[y, x] or not cell_ok[y + 1, x]:
-                continue
-            z_up = top[y + 1, x, 2]
-            z_dn = top[y + 2, x, 2]
-            if abs(z_up - z_dn) > half_layer_mm:
-                t0, t1 = ti(y + 1, x), ti(y + 1, x + 1)
-                if z_up > z_dn:
-                    faces.append((t0, ti(y + 2, x + 1), t1))
-                    faces.append((t0, ti(y + 2, x), ti(y + 2, x + 1)))
-                else:
-                    faces.append((t0, t1, ti(y + 2, x + 1)))
-                    faces.append((t0, ti(y + 2, x + 1), ti(y + 2, x)))
+    _emit_perimeter_walls(h, w, cell_ok, ti, bi, faces)
+    _emit_step_walls(h, w, top, cell_ok, layer_height_mm * 0.5, ti, faces)
 
     faces_arr = (
         np.array(faces, dtype=np.int32)

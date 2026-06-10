@@ -134,8 +134,12 @@ export const AuthCallbackHandler = ({ onComplete }) => {
         // signed-in on the sister apps too. Non-blocking; failures
         // are swallowed inside the helper.
         fanOutSsoBridge();
-      } catch {
-        /* fall through — user will see anonymous state */
+      } catch (err) {
+        // Auth-loop bugs in this app have historically been hard to
+        // diagnose because the failed exchange happened silently. Log
+        // the error so the next regression is debuggable; UX still
+        // falls through to anonymous state.
+        console.warn("[lithoforge/auth] session exchange failed:", err);
       } finally {
         setProcessing(false);
         if (onComplete) onComplete();

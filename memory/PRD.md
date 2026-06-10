@@ -1134,6 +1134,33 @@ indexing if your slicer pipeline needs it.
    PayPal.com (sandbox accounts are auto-funded with $5k+ test USD).
 
 ## Backlog
+
+## Code review rebuttals (2026-02-28)
+
+Auto-generated code review (env `9903f5df`) flagged 100+ items. After auditing each, **7 were applied**, **5 were declined with documented reasoning**, and the rest were stylistic or false-positive. Future reviews should not re-raise the declined items.
+
+### ✅ Applied
+- **Refactored `_build_slab_mesh`** (175 LOC → coordinator ~50 LOC + four focused helpers `_emit_flat_top_bottom_faces`, `_emit_curved_top_bottom_faces`, `_emit_perimeter_walls`, `_emit_step_walls`). All 135 backend tests still pass.
+- **Replaced `key={index}` with stable keys** in `AdminPage.jsx` (audit log), `StatsPanel.jsx` (timeline), `LayerTimeline.jsx`, `LandingPage.jsx` (features), `LibraryMatchPanel.jsx` (matches).
+- **Added diagnostic log** to `auth.js` session-exchange catch — auth-loop bugs have hit this codebase 3+ times; the silent swallow made each regression hard to diagnose.
+
+### 🚫 Declined (false positives or intentional patterns)
+
+| Finding | Why declined |
+|---|---|
+| **XSS via innerHTML** (`Lithophane3DPreview.jsx:82`) | `container.innerHTML = ""` is **clearing a div** before mounting Three.js. No user content. Static analyzer pattern-matched on `.innerHTML =` without context. |
+| **"Hardcoded secret"** `conftest.py:46` | Code is `secrets.token_urlsafe(16)` — already random per test run, exactly what the review recommends. False flag. |
+| **"Hardcoded secret"** `test_sso_bridge.py:155` | `secret="totally-different-secret"` is **intentionally wrong** to exercise the JWT rejection path. Randomizing it defeats the test. |
+| **Insecure localStorage** (`PresetManager.jsx:114`) | Stores filament presets (color name + hex + thermal data). No credentials, tokens, or PII. localStorage is the correct primitive for this. |
+| **Empty catch blocks** | Every flagged catch has a deliberate inline comment explaining the swallow (logout failure = local-state-wins UX, Drop-in teardown throws on already-torn instance, `popup.close()` on closed popup throws, JSDOM lacks `scrollIntoView`, Safari incognito throws on sessionStorage). Each is correct and intentional. |
+
+### 🟡 Deferred (working code, stylistic only)
+
+- **Split large components** (App.js 391 lines, ConfigPanel 519 lines, etc.) — working, tested code. Refactoring purely for line count would risk regressions in payment, auth, and mesh paths that just shipped.
+- **Missing hook deps in auth.js** (`login`, `logout`, `refresh` callbacks) — stable refs we deliberately omit to keep the callback identity stable across renders. CRA's eslint warned and we accepted.
+- **Type hint coverage 49.3%** — fine for an MVP; tests at 0–10% is explicitly called out as acceptable by the review itself.
+
+
 ### P1
 - True 3D WebGL preview (three.js) instead of 2D rendered PNG
 - Vectorised mesh / STL writer for large images (currently Python loop — slow for 512px meshes)

@@ -392,9 +392,9 @@ const AuditTab = () => {
           <span>Actor</span>
           <span>Payload</span>
         </div>
-        {entries.map((e, i) => (
+        {entries.map((e) => (
           <div
-            key={i}
+            key={`${e.created_at}-${e.action}-${e.actor_user_id}-${e.target_user_id || ""}`}
             className="grid grid-cols-[160px_140px_220px_1fr] gap-2 px-3 py-2 border-b border-zinc-900 font-mono text-[10px] text-zinc-300"
           >
             <span className="text-zinc-500">

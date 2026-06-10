@@ -317,7 +317,7 @@ const FeatureGrid = () => (
           const Icon = f.icon;
           return (
             <div
-              key={i}
+              key={f.title}
               data-testid={`feature-${i}`}
               className="bg-zinc-950 p-5 sm:p-6 space-y-3 hover:bg-zinc-900/60 transition-colors"
             >

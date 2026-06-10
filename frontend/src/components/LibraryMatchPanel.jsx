@@ -210,7 +210,7 @@ export const LibraryMatchPanel = ({
       <div className="space-y-1">
         {matches.map((m, i) => (
           <div
-            key={i}
+            key={`${m.input_hex}-${i}`}
             className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-2 font-mono text-[10px]"
             data-testid={`library-match-row-${i}${testIdSuffix}`}
             data-severity={m.severity}

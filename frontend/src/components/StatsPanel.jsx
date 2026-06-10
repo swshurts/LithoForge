@@ -364,7 +364,7 @@ export const StatsPanel = ({
                 : 0;
               return (
                 <div
-                  key={i}
+                  key={`${t.name}-${i}`}
                   className="flex items-center gap-2 font-mono text-[11px]"
                   data-testid={`allocation-row-${i}`}
                 >

@@ -25,7 +25,7 @@ export const LayerTimeline = ({ timeline, totalLayers }) => {
           const pct = (t.layers / totalLayers) * 100;
           return (
             <div
-              key={i}
+              key={`${t.name}-${i}`}
               className="relative group"
               style={{ width: `${pct}%`, background: t.color }}
               title={`${t.name} · ${t.layers} layers · ${t.start_z_mm.toFixed(
