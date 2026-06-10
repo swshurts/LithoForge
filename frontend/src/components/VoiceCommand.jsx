@@ -169,7 +169,20 @@ export default function VoiceCommand() {
 
     r.onerror = (ev) => {
       if (ev.error === "no-speech" || ev.error === "aborted") return;
-      toast.error(`Voice error: ${ev.error}`);
+      if (ev.error === "not-allowed") {
+        toast.error("Microphone blocked", {
+          description:
+            "Click the 🔒 padlock in your address bar → Permissions → set Microphone to Allow, then click the mic again.",
+          duration: 8000,
+        });
+      } else if (ev.error === "service-not-allowed") {
+        toast.error("Voice service blocked", {
+          description: "Browser or system has disabled speech recognition for this site.",
+          duration: 6000,
+        });
+      } else {
+        toast.error(`Voice error: ${ev.error}`);
+      }
       close();
     };
 
