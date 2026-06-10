@@ -17,8 +17,15 @@ import {
 import { UserMenu } from "./UserMenu";
 import { useAuth } from "../lib/auth";
 import { openInPeer } from "../lib/ssoHandoff";
+import buildInfo from "../build-info.json";
 
 const FORGESLICER_ORIGIN = "https://forgeslicer.com";
+
+// Read the iteration badge value from a tracked JSON file. Tracked so
+// production deploys (whose build containers don't have a git history
+// for `git rev-list --count`) see the same value as preview. Bump this
+// file on every meaningful commit.
+const BUILD_ID = buildInfo?.iter ? `iter-${buildInfo.iter}` : "";
 
 /** Click handler factory: signed-in users go via the SSO redirect
  *  flow (first-party cookie on ForgeSlicer); anon users open it cold. */
@@ -64,13 +71,13 @@ const LandingHeader = () => {
           </div>
           <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-zinc-500 leading-none mt-0.5 flex items-center gap-1.5">
             <span>Photo · Beer-Lambert</span>
-            {process.env.REACT_APP_BUILD_ID && (
+            {BUILD_ID && (
               <span
                 className="text-zinc-700 normal-case tracking-normal"
-                title={`Build ${process.env.REACT_APP_BUILD_ID}`}
+                title={`Build ${BUILD_ID}`}
                 data-testid="landing-build-id"
               >
-                · {process.env.REACT_APP_BUILD_ID}
+                · {BUILD_ID}
               </span>
             )}
           </div>
