@@ -27,18 +27,20 @@ export async function fanOutSsoBridge() {
       peers.map((peer) =>
         fetch(`${peer}/api/auth/sso-bridge`, {
           method: "POST",
-          // `no-cors` because peers run on a different origin and we
-          // don't care about reading the body — we just want the peer
-          // to set ITS cookie on ITS domain via the Set-Cookie header.
-          //
-          // CRITICAL: in no-cors mode the browser STRIPS all custom
-          // headers (including X-Forge-Suite-Token). We therefore send
-          // the JWT in the request BODY with Content-Type: text/plain
-          // — a CORS-safelisted content type that survives no-cors.
-          // Peers accept the token from either header or body.
-          mode: "no-cors",
+          // CORS mode — peers add this app to their CORSMiddleware
+          // allowlist (via FORGE_SUITE_PEERS env). Browser does a
+          // proper preflight, custom headers work, and we can read
+          // the response if we want to surface bridge status in UI.
+          mode: "cors",
           credentials: "include",
-          headers: { "Content-Type": "text/plain" },
+          // Body fallback kept defensively: any peer still running
+          // an older accept handler that reads only the header
+          // continues to work; peers running the new dual-path code
+          // can read it from either spot.
+          headers: {
+            "Content-Type": "text/plain",
+            "X-Forge-Suite-Token": token,
+          },
           body: token,
         }),
       ),

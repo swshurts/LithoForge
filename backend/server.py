@@ -645,10 +645,37 @@ app.include_router(payouts_router, prefix="/api")
 app.include_router(paypal_webhook_router, prefix="/api")
 app.include_router(filament_lib_router)
 
+def _cors_origins() -> list[str]:
+    """Build the CORS allowlist from two env sources:
+    - `CORS_ORIGINS` — the app's own frontend origins (preview + prod)
+    - `FORGE_SUITE_PEERS` — every Forge Suite peer (ForgeSlicer + future siblings)
+       so the cross-origin SSO bridge POST/preflight succeeds without
+       hand-editing this list each time we add a peer.
+    """
+    primary = [
+        o.strip().rstrip("/")
+        for o in (os.environ.get("CORS_ORIGINS") or "").split(",")
+        if o.strip()
+    ]
+    peers = [
+        p.strip().rstrip("/")
+        for p in (os.environ.get("FORGE_SUITE_PEERS") or "").split(",")
+        if p.strip()
+    ]
+    # De-dup while preserving order so the most-likely origin (own
+    # frontend) is checked first by the middleware.
+    seen, out = set(), []
+    for o in primary + peers:
+        if o not in seen:
+            seen.add(o)
+            out.append(o)
+    return out
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "").split(","),
+    allow_origins=_cors_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
