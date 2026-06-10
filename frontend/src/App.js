@@ -67,6 +67,76 @@ export default function App() {
       .catch(() => toast.error("Failed to load default filaments"));
   }, []);
 
+  // Voice → Meshy.ai → upload pipeline. Subscribe to `voice-prompt`
+  // events from VoiceCommand.jsx. On each prompt:
+  //   1. POST it to our Meshy text-to-image proxy
+  //   2. Poll the task every 2 s (up to 90 s)
+  //   3. On success, fetch the image as a Blob, wrap it as a File,
+  //      and hand it to the existing handleFile pipeline so the
+  //      result flows through upload → edits → optimize like any
+  //      user-supplied photo.
+  useEffect(() => {
+    const onVoicePrompt = async (e) => {
+      const prompt = e.detail?.prompt?.trim();
+      if (!prompt) return;
+      const { API } = await import("@/lib/api");
+      const toastId = toast.loading(`Generating with Meshy AI…`, {
+        description: prompt.slice(0, 60) + (prompt.length > 60 ? "…" : ""),
+      });
+      try {
+        const createRes = await fetch(`${API}/meshy/text-to-image`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        });
+        if (!createRes.ok) {
+          const body = await createRes.json().catch(() => ({}));
+          throw new Error(body.detail || `Meshy submit failed (${createRes.status}).`);
+        }
+        const { task_id } = await createRes.json();
+
+        // Poll up to 90×2s = 180s — Meshy nano-banana usually finishes
+        // in 30-60s but can queue up to 2-3 minutes at peak load.
+        let imageUrl = null;
+        for (let i = 0; i < 90; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const statusRes = await fetch(
+            `${API}/meshy/text-to-image/${task_id}`,
+            { credentials: "include" },
+          );
+          if (!statusRes.ok) continue;
+          const s = await statusRes.json();
+          if (s.image_url) {
+            imageUrl = s.image_url;
+            break;
+          }
+          if (s.status === "FAILED" || s.status === "EXPIRED") {
+            throw new Error(`Meshy task ${s.status.toLowerCase()}.`);
+          }
+        }
+        if (!imageUrl) throw new Error("Meshy generation timed out after 3 minutes.");
+
+        // Fetch the finished image and run it through handleFile so it
+        // lands in the editor exactly like a manual upload.
+        const blob = await (await fetch(imageUrl)).blob();
+        const file = new File([blob], `meshy-${Date.now()}.png`, {
+          type: blob.type || "image/png",
+        });
+        toast.success("Meshy image ready — loading into editor", { id: toastId });
+        await handleFile(file);
+      } catch (err) {
+        toast.error("Meshy generation failed", {
+          id: toastId,
+          description: err.message,
+        });
+      }
+    };
+    window.addEventListener("voice-prompt", onVoicePrompt);
+    return () => window.removeEventListener("voice-prompt", onVoicePrompt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const maxActive = config.max_swaps + 1;
 
   const handleFile = async (file) => {
