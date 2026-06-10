@@ -15,7 +15,12 @@ import React, {
   useState,
 } from "react";
 import { api } from "./api";
-import { fanOutSsoBridge } from "./ssoBridge";
+// `fanOutSsoBridge` was the silent cross-origin fetch fan-out. It's
+// been removed from the login path because browsers (Firefox ETP,
+// Safari ITP, Chrome 3p phase-out) partition the resulting Set-Cookie
+// into oblivion. The redirect-based `openInPeer()` helper in
+// `./ssoHandoff.js` replaces it. Old `./ssoBridge.js` file kept on
+// disk for rollback only.
 
 const AuthCtx = createContext({
   user: null,
@@ -130,10 +135,6 @@ export const AuthCallbackHandler = ({ onComplete }) => {
         // Pull the just-set cookie into the AuthProvider so the UI
         // updates without a page reload.
         await refresh();
-        // Fan out to peer apps (ForgeSlicer) so the user lands
-        // signed-in on the sister apps too. Non-blocking; failures
-        // are swallowed inside the helper.
-        fanOutSsoBridge();
       } catch (err) {
         // Auth-loop bugs in this app have historically been hard to
         // diagnose because the failed exchange happened silently. Log

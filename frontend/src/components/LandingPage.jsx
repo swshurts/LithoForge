@@ -15,6 +15,24 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { UserMenu } from "./UserMenu";
+import { useAuth } from "../lib/auth";
+import { openInPeer } from "../lib/ssoHandoff";
+
+const FORGESLICER_ORIGIN = "https://forgeslicer.com";
+
+/** Click handler factory: signed-in users go via the SSO redirect
+ *  flow (first-party cookie on ForgeSlicer); anon users open it cold. */
+const useSisterToolHandler = () => {
+  const { user } = useAuth();
+  return (e) => {
+    e.preventDefault();
+    if (user) {
+      openInPeer(FORGESLICER_ORIGIN, "/");
+    } else {
+      window.open(FORGESLICER_ORIGIN, "_blank", "noopener");
+    }
+  };
+};
 
 /* --------------------------------------------------------------------------
  * Header (landing variant)
@@ -24,7 +42,9 @@ import { UserMenu } from "./UserMenu";
  * (per user request).
  * ------------------------------------------------------------------------*/
 
-const LandingHeader = () => (
+const LandingHeader = () => {
+  const handleSister = useSisterToolHandler();
+  return (
   <header
     className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-sm sticky top-0 flex items-center justify-between px-5 h-14 z-30"
     data-testid="landing-header"
@@ -54,6 +74,7 @@ const LandingHeader = () => (
         href="https://forgeslicer.com"
         target="_blank"
         rel="noopener noreferrer"
+        onClick={handleSister}
         data-testid="sister-tool-link"
         className="hidden md:flex items-center gap-1.5 pl-1 pr-2.5 py-1 border border-zinc-800 hover:border-amber-500/60 text-zinc-300 hover:text-zinc-100 font-mono text-[10px] uppercase tracking-[0.15em] transition-colors duration-150"
       >
@@ -93,13 +114,16 @@ const LandingHeader = () => (
       </Link>
     </div>
   </header>
-);
+  );
+};
 
 /* --------------------------------------------------------------------------
  * Hero
  * ------------------------------------------------------------------------*/
 
-const Hero = () => (
+const Hero = () => {
+  const handleSister = useSisterToolHandler();
+  return (
   <section className="relative overflow-hidden border-b border-zinc-800">
     {/* subtle CMYK accent grid behind the hero text */}
     <div
@@ -162,6 +186,7 @@ const Hero = () => (
           href="https://forgeslicer.com"
           target="_blank"
           rel="noopener noreferrer"
+          onClick={handleSister}
           className="group block relative w-full aspect-square max-w-[420px] mx-auto border border-zinc-800 hover:border-amber-500/60 transition-colors overflow-hidden"
         >
           <img
@@ -187,7 +212,8 @@ const Hero = () => (
       </div>
     </div>
   </section>
-);
+  );
+};
 
 /* --------------------------------------------------------------------------
  * How it works (3 steps)
@@ -342,13 +368,16 @@ const FeatureGrid = () => (
  * Sister-tool plug
  * ------------------------------------------------------------------------*/
 
-const SisterTool = () => (
+const SisterTool = () => {
+  const handleSister = useSisterToolHandler();
+  return (
   <section className="border-b border-zinc-800">
     <div className="max-w-6xl mx-auto px-6 py-16">
       <a
         href="https://forgeslicer.com"
         target="_blank"
         rel="noopener noreferrer"
+        onClick={handleSister}
         data-testid="sister-tool-banner"
         className="group block border border-zinc-800 hover:border-amber-500/60 transition-colors p-2 sm:p-3"
       >
@@ -389,7 +418,8 @@ const SisterTool = () => (
       </a>
     </div>
   </section>
-);
+  );
+};
 
 /* --------------------------------------------------------------------------
  * Final CTA + Footer
@@ -421,7 +451,9 @@ const FinalCTA = () => (
   </section>
 );
 
-const Footer = () => (
+const Footer = () => {
+  const handleSister = useSisterToolHandler();
+  return (
   <footer className="bg-zinc-950" data-testid="landing-footer">
     <div className="max-w-6xl mx-auto px-6 py-10 grid md:grid-cols-3 gap-8 items-start">
       <div>
@@ -463,6 +495,7 @@ const Footer = () => (
               href="https://forgeslicer.com"
               target="_blank"
               rel="noopener noreferrer"
+              onClick={handleSister}
             >
               ForgeSlicer.com
               <ExternalLink className="w-2.5 h-2.5" />
@@ -476,7 +509,8 @@ const Footer = () => (
       <span>Photo · Beer-Lambert ΔE76</span>
     </div>
   </footer>
-);
+  );
+};
 
 export const LandingPage = () => (
   <div

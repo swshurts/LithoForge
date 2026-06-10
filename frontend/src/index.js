@@ -11,6 +11,7 @@ import { PurchaseSuccessPage } from "@/components/marketplace/PurchaseSuccessPag
 import { PayoutsPage } from "@/components/marketplace/PayoutsPage";
 import { PricingPage } from "@/components/PricingPage";
 import { AdminPage } from "@/components/admin/AdminPage";
+import SsoAccept from "@/components/SsoAccept";
 import { installErrorReporter } from "@/lib/errorReporter";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, AuthCallbackHandler } from "@/lib/auth";
@@ -46,6 +47,7 @@ root.render(
               <Route path="/payouts" element={<PayoutsPage />} />
               <Route path="/pricing" element={<PricingPage />} />
               <Route path="/admin" element={<AdminPage />} />
+              <Route path="/auth/sso-accept" element={<SsoAccept />} />
             </Routes>
           </BrowserRouter>
         </QuotaProvider>
