@@ -62,8 +62,17 @@ const LandingHeader = () => {
           <div className="font-display text-base font-black tracking-tighter leading-none">
             LITHOFORGE
           </div>
-          <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-zinc-500 leading-none mt-0.5">
-            Photo · Beer-Lambert
+          <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-zinc-500 leading-none mt-0.5 flex items-center gap-1.5">
+            <span>Photo · Beer-Lambert</span>
+            {process.env.REACT_APP_BUILD_ID && (
+              <span
+                className="text-zinc-700 normal-case tracking-normal"
+                title={`Build ${process.env.REACT_APP_BUILD_ID}`}
+                data-testid="landing-build-id"
+              >
+                · {process.env.REACT_APP_BUILD_ID}
+              </span>
+            )}
           </div>
         </div>
       </Link>

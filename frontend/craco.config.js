@@ -1,6 +1,25 @@
 // craco.config.js
 const path = require("path");
+const { execSync } = require("child_process");
 require("dotenv").config();
+
+// Bake a build identifier into the bundle so the landing page can
+// surface "which iteration of the app is this?" without us hand-
+// editing .env each session. Falls back gracefully if git is missing
+// or the repo is shallow.
+try {
+  if (!process.env.REACT_APP_BUILD_ID) {
+    const sha = execSync("git rev-parse --short HEAD", {
+      cwd: __dirname,
+      stdio: ["pipe", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+    if (sha) process.env.REACT_APP_BUILD_ID = sha;
+  }
+} catch {
+  /* no git, no problem — the landing badge just won't render */
+}
 
 // Check if we're in development/preview mode (not production build)
 // Craco sets NODE_ENV=development for start, NODE_ENV=production for build
@@ -29,6 +48,11 @@ let webpackConfig = {
       rules: {
         "react-hooks/rules-of-hooks": "error",
         "react-hooks/exhaustive-deps": "warn",
+        // Newer react-hooks plugin versions enable this in recommended;
+        // we use `await refresh()` inside `useEffect` deliberately in
+        // several auth + data-fetch hooks. Turning the rule off matches
+        // CRA's own React 18 conventions.
+        "react-hooks/set-state-in-effect": "off",
       },
     },
   },

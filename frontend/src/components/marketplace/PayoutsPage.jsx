@@ -43,7 +43,8 @@ export const PayoutsPage = () => {
   useEffect(() => {
     if (!user) return;
     refresh();
-  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const handleSaveEmail = async (e) => {
     e?.preventDefault?.();
