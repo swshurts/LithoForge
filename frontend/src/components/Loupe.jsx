@@ -45,7 +45,7 @@ const hexToRgb = (hex) => {
  *
  *  Triggered on long-press (mobile) or shift+click (desktop) of the
  *  source image. Shows a 4× zoom circle anchored to the cursor with
- *  the sampled source colour, the closest filament from the palette,
+ *  the sampled source color, the closest filament from the palette,
  *  and the live ΔE between them.
  *
  *  Props:

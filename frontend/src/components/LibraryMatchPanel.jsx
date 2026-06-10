@@ -9,7 +9,7 @@ import { useAuth } from "../lib/auth";
  * Given a palette (array of {name, hex, td}), POSTs to
  * /api/filament-library/match-palette and renders a ΔE-coded row per
  * filament so the user knows whether their (or a buyer's) private
- * library can reproduce each colour:
+ * library can reproduce each color:
  *
  *   ΔE ≤ 5   → "ok"    (green) — imperceptible to acceptable
  *   ΔE ≤ 12  → "close" (yellow) — buyer will see a small shift

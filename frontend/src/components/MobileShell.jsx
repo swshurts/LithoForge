@@ -5,7 +5,7 @@ import { Sliders, Palette, X } from "lucide-react";
  * Bottom-tab + slide-up panel layout for touch devices (< lg).
  *
  * Deliberately avoids Radix Dialog / Sheet because their portal + focus-
- * trap behaviour throws sanitized "Script error." entries on Safari iPad
+ * trap behavior throws sanitized "Script error." entries on Safari iPad
  * when controls are touched mid-animation. We use a plain fixed div
  * instead — same visual effect, no portal magic.
  */

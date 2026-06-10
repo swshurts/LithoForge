@@ -146,8 +146,8 @@ export const ConfigPanel = ({
         />
         <div className="font-mono text-[9px] text-zinc-600 leading-relaxed mt-2">
           {isPainting
-            ? "Each pixel shows one filament's pure colour — no back-light needed. Dark filaments print at the bottom, light on top."
-            : "Colour comes from light transmitted through the stack. Needs a back-light. Full CMYKW subtractive mixing."}
+            ? "Each pixel shows one filament's pure color — no back-light needed. Dark filaments print at the bottom, light on top."
+            : "Color comes from light transmitted through the stack. Needs a back-light. Full CMYKW subtractive mixing."}
         </div>
       </div>
 
@@ -378,7 +378,7 @@ export const ConfigPanel = ({
             thinner layers = better color resolution & smoother gradients
             but much longer print time.
             <br /><br />
-            <strong className="text-zinc-200">Max colour swaps</strong>:
+            <strong className="text-zinc-200">Max color swaps</strong>:
             how many times the printer changes filament during the print.
             Every swap adds purge waste; lower = faster prints but
             coarser color. Most printers cap at 8 swaps before purge
@@ -422,7 +422,7 @@ export const ConfigPanel = ({
           </div>
 
           <Row
-            label="Max colour swaps"
+            label="Max color swaps"
             value={`${config.max_swaps} / ${swapsMax}`}
             unit=""
             testid="row-swaps"

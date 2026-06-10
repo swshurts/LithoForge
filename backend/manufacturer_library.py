@@ -5,7 +5,7 @@ We capture brand, sku name, hex (taken from manufacturer marketing
 swatches when published, otherwise approximated from product photos),
 transmission distance (mm — Hueforge-compatible) and a coarse finish
 classifier so the closest-match UI can surface both matte and gloss
-variants of the same colour.
+variants of the same color.
 
 Approximate TD heuristics used when the brand doesn't publish a number:
   White / cream  : 4.5 – 6.0   (matte ≈ −0.5)
@@ -213,7 +213,7 @@ HATCHBOX = [
 ]
 
 # ---------------------------------------------------------------------------
-# uJoybio3d — colour-rich budget brand
+# uJoybio3d — color-rich budget brand
 # ---------------------------------------------------------------------------
 UJOYBIO3D = [
     _f("uJoybio3d", "PLA Pure White",            "#F6F6F6", 4.6),

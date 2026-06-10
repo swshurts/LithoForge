@@ -13,8 +13,8 @@ export const ListingDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  // Default to the rendered colour preview because it shows the
-  // colour-accurate result; users can flip to 3D to inspect relief.
+  // Default to the rendered color preview because it shows the
+  // color-accurate result; users can flip to 3D to inspect relief.
   const [previewMode, setPreviewMode] = useState("image");
 
   useEffect(() => {
@@ -77,7 +77,7 @@ export const ListingDetailPage = () => {
                   3D
                 </button>
                 <span className="ml-auto pr-4 font-mono text-[9px] text-zinc-600 uppercase tracking-[0.18em]">
-                  {previewMode === "3d" ? "Low-res · IP-safe" : "Slicer colour render"}
+                  {previewMode === "3d" ? "Low-res · IP-safe" : "Slicer color render"}
                 </span>
               </div>
               {previewMode === "image" ? (

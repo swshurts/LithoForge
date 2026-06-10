@@ -85,7 +85,7 @@ export const AuthProvider = ({ children }) => {
  *  before any /auth/me checks. After a successful session exchange we
  *  refresh the AuthProvider so the UI immediately reflects the signed-
  *  in state without requiring a full page reload (the previous
- *  behaviour, which was masked when `/` was the studio because the
+ *  behavior, which was masked when `/` was the studio because the
  *  studio's first network call would surface the user — now that `/`
  *  is the static landing page nothing was poking auth state). */
 export const AuthCallbackHandler = ({ onComplete }) => {

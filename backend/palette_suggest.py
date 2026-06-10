@@ -127,7 +127,7 @@ def suggest_palette(
         nearest_d = np.full(sample_lab.shape[0], 1e9)
 
     # At high vibrancy the chroma bonus dominates and hue-wheel gap
-    # ensures the picks cover distinct sectors of the colour wheel.
+    # ensures the picks cover distinct sectors of the color wheel.
     chroma_bonus_weight = 0.05 + 0.35 * vibrancy
     hue_gap_weight = 0.0 + 1.0 * vibrancy
     # Minimum chroma to count a filament as "chromatic" when measuring

@@ -154,7 +154,7 @@ export const Histogram = ({ image, edits }) => {
     };
 
     const series = { lum, r, g, b };
-    // Draw lum LAST so its grey overlay sits on top of the colour
+    // Draw lum LAST so its grey overlay sits on top of the color
     // channels (matches Photoshop / Lightroom convention).
     const drawOrder = ["r", "g", "b", "lum"];
     for (const id of drawOrder) {

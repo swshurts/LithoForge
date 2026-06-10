@@ -23,7 +23,7 @@ from manufacturer_library import CATALOG, brands as catalog_brands
 
 
 # ---------------------------------------------------------------------------
-# Colour math: hex → Lab → ΔE
+# Color math: hex → Lab → ΔE
 # ---------------------------------------------------------------------------
 
 def _hex_to_rgb(h: str) -> tuple[float, float, float]:
@@ -332,7 +332,7 @@ def build_filament_library_router(db, require_user_dep, get_current_user_dep):
 
         Always returns one result per input, in order. Each result has
         the input hex, the best match (or `null` if the pool was empty),
-        the ΔE, and a `severity` bucket so the UI can colour-code:
+        the ΔE, and a `severity` bucket so the UI can color-code:
           severity = "ok"      → ΔE ≤ 5
           severity = "close"   → ΔE ≤ 12
           severity = "far"     → ΔE > 12  (creator/buyer should consider

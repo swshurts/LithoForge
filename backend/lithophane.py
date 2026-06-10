@@ -1,8 +1,8 @@
 """CMYKW Lithophane optimizer.
 
 Converts a photograph into a per-pixel layer height-map using Beer-Lambert
-filament transmission modelling and ΔE (CIE76) nearest-neighbour matching
-in CIE Lab colour space.
+filament transmission modeling and ΔE (CIE76) nearest-neighbour matching
+in CIE Lab color space.
 
 Pipeline
 --------
@@ -11,14 +11,14 @@ Pipeline
    Distance per channel). The stack order (bottom→top) is fixed per job and
    max_swaps+1 filaments are used.
 3. Allocate `total_layers` across the chosen filaments using a histogram-
-   based heuristic that reflects how much "presence" of each colour the
+   based heuristic that reflects how much "presence" of each color the
    image needs.
 4. For each discrete height 0..total_layers compute the simulated light
    output using Beer-Lambert: L_out = L_in * exp(-thickness / TD) per
    channel. This produces an RGB look-up table (LUT).
 5. For every pixel pick the LUT entry with the smallest ΔE against the
    target. That index is the printed height for that pixel (in layers).
-6. Return the layer map, rendered preview, colour-swap heights, and stats.
+6. Return the layer map, rendered preview, color-swap heights, and stats.
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ def _beer_lambert_transmission(filament: Filament, thickness_mm: float) -> np.nd
     Uses the standard photographic-filament approximation
         T_channel(t) = rgb_channel ** (t / TD)
     where TD is the transmission distance in mm at which the filament reaches
-    its characteristic colour. This naturally reproduces subtractive colour
+    its characteristic color. This naturally reproduces subtractive color
     mixing (cyan attenuates R, magenta attenuates G, yellow attenuates B) and
     keeps each channel independent."""
     rgb = np.clip(filament.rgb, 0.01, 1.0)  # avoid log(0)
@@ -100,7 +100,7 @@ def simulate_stack(
     through stacked layers from bottom up to each layer index.
 
     layer_allocation[i] = number of layers of filaments[i] (bottom to top).
-    LUT[k] is the colour seen when the printed height is k layers.
+    LUT[k] is the color seen when the printed height is k layers.
     """
     total = sum(layer_allocation)
     lut = np.ones((total + 1, 3), dtype=np.float64)  # start with white light
@@ -135,7 +135,7 @@ def _clamp_to_caps(alloc: List[int], caps: List[int], total: int) -> List[int]:
     If no filament has headroom (e.g. caps too tight to hit `total`),
     the function gives up on the budget — the print will simply be
     slightly thinner than requested, which is the correct lithophane
-    behaviour rather than padding with opaque layers.
+    behavior rather than padding with opaque layers.
     """
     result = list(alloc)
     while True:
@@ -285,13 +285,13 @@ def allocate_layers(
     Neutral filaments (White, Key, Grey, etc.) only need a handful of layers
     to perform their luminance role — extra thickness there just wastes
     budget. Chromatic filaments need more layers to accumulate visible
-    colour density. We therefore:
+    color density. We therefore:
 
     1. Cap W / K / very-low-chroma filaments at a small fixed budget
        (scaled with total thickness so very tall prints still leave room).
     2. Cap EVERY filament at ~td_cap_multiplier × TD layers — beyond
        that thickness the filament is fully saturated and additional
-       layers only block back-light without changing colour. Default
+       layers only block back-light without changing color. Default
        1.5× matches HueForge's "max useful thickness" rule.
     3. Split the remaining layer budget among the chromatic filaments,
        weighted by how much each is actually "useful" for the image
@@ -413,7 +413,7 @@ def allocate_layers(
             if not placed:
                 # Every filament hit its TD cap. The print is now thinner
                 # than the user asked for, which is the correct
-                # behaviour — better than an opaque slab.
+                # behavior — better than an opaque slab.
                 break
             guard += 1
 
@@ -442,8 +442,8 @@ class OptimizeResult:
     layer_height_mm: float
     delta_e_mean: float
     delta_e_p95: float
-    swap_heights_mm: List[float]   # Z heights at which colour changes
-    swap_colors: List[str]         # hex of the colour active *above* the swap
+    swap_heights_mm: List[float]   # Z heights at which color changes
+    swap_colors: List[str]         # hex of the color active *above* the swap
     light_throughput_pct: float = 0.0  # Predicted back-light brightness 0..100
 
 
@@ -564,8 +564,8 @@ def _optimize_painting(
     smoothing: float = 0.0,
     frame_px: int = 0,
 ) -> "OptimizeResult":
-    """Painting mode: each pixel shows the single filament colour nearest to
-    its Lab target. No subtractive mixing; colour fidelity is bounded by the
+    """Painting mode: each pixel shows the single filament color nearest to
+    its Lab target. No subtractive mixing; color fidelity is bounded by the
     palette itself. Stack is ordered dark→light bottom→top so dark regions
     recess and light regions rise as relief.
 
@@ -717,10 +717,10 @@ def optimize(
     Beer-Lambert) or a reflective painting (nearest-filament mapping).
 
     `render_mode`:
-        "lithophane" — stacked colour from transmitted light (default)
-        "painting"   — each pixel shows one filament's reflective colour
+        "lithophane" — stacked color from transmitted light (default)
+        "painting"   — each pixel shows one filament's reflective color
 
-    `relief` (painting mode only): 0 = flat plateaus per colour region,
+    `relief` (painting mode only): 0 = flat plateaus per color region,
     1 = within-zone height modulated by pixel luminance for bas-relief
     texture.
     """

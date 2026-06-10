@@ -77,7 +77,7 @@ describe("sendToForgeSlicer", () => {
   // so the "wrong origin → never resolves" property is covered by code
   // review (the listener early-returns on `e.origin !== FORGESLICER_ORIGIN`)
   // rather than a flaky test. The 3 tests below assert every other
-  // behaviour: happy path, popup-blocker, and auth gate.
+  // behavior: happy path, popup-blocker, and auth gate.
 
   it("throws PopupBlocked when window.open returns null", async () => {
     openSpy.mockReturnValue(null);

@@ -155,12 +155,12 @@ const Hero = () => {
         <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-black tracking-tighter leading-[0.95]">
           Print photographs.
           <br />
-          <span className="text-zinc-500">In</span> Multi colour.
+          <span className="text-zinc-500">In</span> Multi color.
         </h1>
         <p className="font-mono text-sm sm:text-base text-zinc-300 leading-relaxed max-w-xl">
           LithoForge turns any photo into a layered CMYKW lithophane that
           your filament printer can produce slice-by-slice — with
-          colour-accurate Beer-Lambert layering, auto-injected
+          color-accurate Beer-Lambert layering, auto-injected
           M600 / tool-change pauses, and a marketplace to sell what you
           design.
         </p>
@@ -216,7 +216,7 @@ const Hero = () => {
           </div>
         </a>
         <div className="text-center font-mono text-[10px] text-zinc-600 mt-3 uppercase tracking-[0.18em]">
-          Where the colour-aware slicing happens
+          Where the color-aware slicing happens
         </div>
       </div>
     </div>
@@ -239,7 +239,7 @@ const STEPS = [
     n: "02",
     icon: Palette,
     label: "Tune the palette",
-    body: "Hit \"Suggest palette from photo\" to get an AI-picked CMYKW set, or pencil-edit each swatch. Match any colour to a real-world SKU from Bambu Lab, Polymaker, Prusament, eSun and 5 more brands by ΔE76 / ΔE2000.",
+    body: "Hit \"Suggest palette from photo\" to get an AI-picked CMYKW set, or pencil-edit each swatch. Match any color to a real-world SKU from Bambu Lab, Polymaker, Prusament, eSun and 5 more brands by ΔE76 / ΔE2000.",
   },
   {
     n: "03",
@@ -411,11 +411,11 @@ const SisterTool = () => {
               <ExternalLink className="w-3 h-3" /> Sister tool
             </div>
             <div className="font-display text-2xl sm:text-3xl font-black tracking-tight leading-tight">
-              ForgeSlicer.com — colour-aware slicing.
+              ForgeSlicer.com — color-aware slicing.
             </div>
             <p className="font-mono text-[11px] text-zinc-400 max-w-xl leading-relaxed">
               LithoForge designs lithophanes; ForgeSlicer prepares the
-              G-code. Use them together for a colour-managed pipeline
+              G-code. Use them together for a color-managed pipeline
               from photograph to print bed.
             </p>
             <div className="pt-2 flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-[0.2em] text-zinc-300 group-hover:text-amber-100 transition-colors">
@@ -480,7 +480,7 @@ const Footer = () => {
         </div>
         <div className="font-mono text-[10px] text-zinc-600 mt-3 leading-relaxed">
           A CMYKW lithophane designer built on Beer-Lambert
-          transmission modelling.
+          transmission modeling.
         </div>
       </div>
       <div>

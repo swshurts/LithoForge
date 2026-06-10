@@ -23,8 +23,8 @@ export const Header = ({ onGenerate, canGenerate, generating, jobId, baseMinLaye
     try {
       await sendToForgeSlicer({
         // 3MF carries the per-filament objects + slot/RGB metadata that
-        // ForgeSlicer needs to recover the full colour palette. STL would
-        // strip that down to a single colourless mesh, so this endpoint
+        // ForgeSlicer needs to recover the full color palette. STL would
+        // strip that down to a single colorless mesh, so this endpoint
         // is the correct handoff format.
         modelUrl: exportUrl(jobId, "3mf", { baseMinLayers }),
         filename: `lithoforge-${jobId.slice(0, 8)}.3mf`,

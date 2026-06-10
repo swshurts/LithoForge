@@ -17,7 +17,7 @@ import { useAuth } from "../lib/auth";
  *
  * Opens from the palette `+` button (mode=add) or each swatch's edit
  * tools (mode=replace, with `swatchIdx`). The user types a target hex
- * or uses the colour picker; the backend returns the closest
+ * or uses the color picker; the backend returns the closest
  * manufacturer SKUs ranked by ΔE76 or ΔE2000. Click a row → it's
  * dropped into the palette with the SKU's hex + TD.
  *
@@ -149,7 +149,7 @@ export const FilamentLibraryDialog = ({
 
   const tabs = useMemo(() => {
     const t = [
-      { id: TAB_SEARCH, label: "Find by colour" },
+      { id: TAB_SEARCH, label: "Find by color" },
     ];
     if (user) t.push({ id: TAB_MINE, label: "My library" });
     t.push({ id: TAB_SUGGEST, label: "Suggest" });
@@ -204,7 +204,7 @@ export const FilamentLibraryDialog = ({
         {/* SEARCH TAB ---------------------------------------------------- */}
         {tab === TAB_SEARCH && (
           <div className="p-5 space-y-4">
-            {/* Target colour input */}
+            {/* Target color input */}
             <div className="flex items-center gap-3">
               <input
                 type="color"
@@ -417,7 +417,7 @@ export const FilamentLibraryDialog = ({
                   {mine.length === 0 && (
                     <div className="font-mono text-[10px] text-zinc-600 py-2">
                       Nothing here yet. Anything you add will appear inside
-                      the "Find by colour" results, marked <span className="px-1 bg-zinc-800 text-zinc-300 border border-zinc-700">MINE</span>.
+                      the "Find by color" results, marked <span className="px-1 bg-zinc-800 text-zinc-300 border border-zinc-700">MINE</span>.
                     </div>
                   )}
                   {mine.map((f) => (
@@ -459,7 +459,7 @@ export const FilamentLibraryDialog = ({
           <form className="p-5 space-y-3" onSubmit={submitSuggestion} data-testid="library-suggest-form">
             <div className="font-mono text-[10px] text-zinc-500 flex items-center gap-1.5">
               <Lightbulb className="w-3 h-3" />
-              Don't see your favourite filament? Suggest it for review.
+              Don't see your favorite filament? Suggest it for review.
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Input

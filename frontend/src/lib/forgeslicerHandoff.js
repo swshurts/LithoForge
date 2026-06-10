@@ -5,7 +5,7 @@
  * current job's 3MF bytes via `postMessage` once ForgeSlicer signals
  * `forgeslicer:handoff:ready`. We send the 3MF (not STL) because the
  * 3MF carries per-filament `<object>` entries tagged with filament_slot
- * + RGB hex + filament_name — ForgeSlicer can recover the full colour
+ * + RGB hex + filament_name — ForgeSlicer can recover the full color
  * palette directly from those objects without re-deriving them.
  *
  * Wire contract:
@@ -89,7 +89,7 @@ export const sendToForgeSlicer = ({
   new Promise((resolve, reject) => {
     const url = modelUrl || stlUrl;
     // Detect the format from the filename / URL extension so we can
-    // tag the postMessage correctly (3mf carries per-colour metadata;
+    // tag the postMessage correctly (3mf carries per-color metadata;
     // stl is flat geometry).
     const ext = (filename || url || "").toLowerCase().split(".").pop();
     const format = ext === "3mf" ? "3mf" : "stl";
@@ -118,7 +118,7 @@ export const sendToForgeSlicer = ({
     //    lands ALREADY SIGNED IN. If minting fails (e.g. user isn't
     //    signed into LithoForge), we fall back to the raw handoff URL
     //    and the user signs in manually on ForgeSlicer — preserving
-    //    the pre-SSO behaviour.
+    //    the pre-SSO behavior.
     const popup = window.open("about:blank", "_blank");
     if (!popup || popup.closed || typeof popup.closed === "undefined") {
       reject(new PopupBlocked(

@@ -278,7 +278,7 @@ export const StatsPanel = ({
           className="w-full flex items-center justify-center gap-2 border border-zinc-700 hover:border-zinc-400 hover:bg-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-zinc-700 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-200 transition-colors duration-150"
         >
           <Wand2 className="w-3 h-3" strokeWidth={1.5} />
-          {suggesting ? "Analysing…" : "Suggest palette from photo"}
+          {suggesting ? "Analyzing…" : "Suggest palette from photo"}
         </button>
         {!canSuggest && !suggesting && (
           <div className="font-mono text-[9px] text-zinc-600 text-center">
@@ -308,7 +308,7 @@ export const StatsPanel = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
-            Colour fidelity
+            Color fidelity
           </span>
           {q && (
             <span

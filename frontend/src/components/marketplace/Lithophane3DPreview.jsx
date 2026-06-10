@@ -82,7 +82,7 @@ export const Lithophane3DPreview = ({ jobId, height = 480 }) => {
     container.innerHTML = "";
     container.appendChild(renderer.domElement);
 
-    // Lighting: a rim + key + soft ambient so colour-flat meshes still
+    // Lighting: a rim + key + soft ambient so color-flat meshes still
     // read as 3D shapes.
     scene.add(new THREE.AmbientLight(0xffffff, 0.55));
     const key = new THREE.DirectionalLight(0xffffff, 1.1);
@@ -93,11 +93,11 @@ export const Lithophane3DPreview = ({ jobId, height = 480 }) => {
     scene.add(rim);
 
     // --- camera orbit state (no OrbitControls dep) ---
-    // Spherical coords around the model's centre.
+    // Spherical coords around the model's center.
     let theta = Math.PI * 0.25;  // azimuth
     let phi = Math.PI * 0.35;    // elevation
     let radius = 250;
-    let centre = new THREE.Vector3(0, 0, 0);
+    let center = new THREE.Vector3(0, 0, 0);
     let dragging = false;
     let lastX = 0;
     let lastY = 0;
@@ -106,12 +106,12 @@ export const Lithophane3DPreview = ({ jobId, height = 480 }) => {
     const updateCamera = () => {
       const sinPhi = Math.sin(phi);
       camera.position.set(
-        centre.x + radius * sinPhi * Math.cos(theta),
-        centre.y + radius * sinPhi * Math.sin(theta),
-        centre.z + radius * Math.cos(phi),
+        center.x + radius * sinPhi * Math.cos(theta),
+        center.y + radius * sinPhi * Math.sin(theta),
+        center.z + radius * Math.cos(phi),
       );
       camera.up.set(0, 0, 1);
-      camera.lookAt(centre);
+      camera.lookAt(center);
     };
     updateCamera();
 
@@ -170,12 +170,12 @@ export const Lithophane3DPreview = ({ jobId, height = 480 }) => {
         const geom = parseBinarySTL(buf);
         geom.computeBoundingBox();
         const bb = geom.boundingBox;
-        // Centre the mesh on its bounding box so orbits look natural.
+        // Center the mesh on its bounding box so orbits look natural.
         const c = new THREE.Vector3();
         bb.getCenter(c);
         geom.translate(-c.x, -c.y, -c.z);
 
-        // Re-compute the bounding box on the *centred* geometry so the
+        // Re-compute the bounding box on the *centered* geometry so the
         // camera-fit math below uses the right extent.
         geom.computeBoundingBox();
         const size = new THREE.Vector3();
@@ -183,7 +183,7 @@ export const Lithophane3DPreview = ({ jobId, height = 480 }) => {
         const maxDim = Math.max(size.x, size.y, size.z);
         // Pull the camera back to fit the whole bound nicely.
         radius = maxDim * 2.4;
-        centre = new THREE.Vector3(0, 0, 0);
+        center = new THREE.Vector3(0, 0, 0);
         updateCamera();
 
         const mat = new THREE.MeshStandardMaterial({

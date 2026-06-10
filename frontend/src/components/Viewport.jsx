@@ -13,7 +13,7 @@ const ViewTabs = ({ active, setActive, hasResult }) => (
     data-testid="view-tabs"
   >
     {[
-      { id: "preview", label: "COLOUR", icon: Eye, requiresResult: true },
+      { id: "preview", label: "COLOR", icon: Eye, requiresResult: true },
       { id: "heightmap", label: "HEIGHT", icon: Grid3x3, requiresResult: true },
       { id: "compare", label: "A/B", icon: SplitSquareHorizontal, requiresResult: true },
       { id: "original", label: "SOURCE", icon: RefreshCw, requiresResult: false },
