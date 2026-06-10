@@ -49,7 +49,7 @@ describe("sendToForgeSlicer", () => {
     const promise = sendToForgeSlicer({
       modelUrl: "https://example.com/api/export/abc/3mf",
       filename: "test.3mf",
-      sourceUrl: "https://lithoforge.com/studio?job=abc",
+      sourceUrl: "https://lithoforge.net/studio?job=abc",
     });
 
     // Wait for fetch to resolve before posting the ready event.

@@ -92,7 +92,7 @@ def _public_user(doc: Dict) -> Dict:
 
 def _set_session_cookie(response: Response, session_token: str) -> None:
     """SameSite=None; Secure is REQUIRED for cross-origin bridge to set
-    a cookie on lithoforge.com from a forgeslicer.com fetch. See spec
+    a cookie on lithoforge.net from a forgeslicer.com fetch. See spec
     Step 4."""
     response.set_cookie(
         key=COOKIE_NAME,

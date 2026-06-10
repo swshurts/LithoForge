@@ -692,11 +692,11 @@
 
 While LithoForge is on a preview environment its `e.origin` is the
 preview URL (e.g. `https://color-match-slicer.preview.emergentagent.com`),
-NOT `https://lithoforge.com`. ForgeSlicer's `/handoff` listener needs
+NOT `https://lithoforge.net`. ForgeSlicer's `/handoff` listener needs
 an origin allow-list to accept both during dev:
 ```js
 const ALLOWED = new Set([
-  "https://lithoforge.com",
+  "https://lithoforge.net",
   "https://color-match-slicer.preview.emergentagent.com",  // remove on prod launch
 ]);
 window.addEventListener("message", e => {
@@ -768,7 +768,7 @@ window.addEventListener("message", e => {
 
 ```js
 window.addEventListener("message", (e) => {
-  if (e.origin !== "https://lithoforge.com") return;
+  if (e.origin !== "https://lithoforge.net") return;
   if (e.data?.type !== "forgeslicer:handoff:model") return;
   // e.data.data        — ArrayBuffer of the 3MF zip
   // e.data.format      — "3mf"
@@ -779,7 +779,7 @@ window.addEventListener("message", (e) => {
 // Tell LithoForge we're ready:
 window.opener?.postMessage(
   {type: "forgeslicer:handoff:ready"},
-  "https://lithoforge.com",
+  "https://lithoforge.net",
 );
 ```
 
