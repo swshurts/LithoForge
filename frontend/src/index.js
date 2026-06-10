@@ -12,6 +12,7 @@ import { PayoutsPage } from "@/components/marketplace/PayoutsPage";
 import { PricingPage } from "@/components/PricingPage";
 import { AdminPage } from "@/components/admin/AdminPage";
 import SsoAccept from "@/components/SsoAccept";
+import VoiceCommand from "@/components/VoiceCommand";
 import { installErrorReporter } from "@/lib/errorReporter";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, AuthCallbackHandler } from "@/lib/auth";
@@ -30,6 +31,7 @@ root.render(
           <BrowserRouter>
             <AuthCallbackHandler />
             <GlobalUpgradeModal />
+            <VoiceCommand />
             <Toaster
               theme="dark"
               position="bottom-right"
