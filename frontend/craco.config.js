@@ -3,19 +3,27 @@ const path = require("path");
 const { execSync } = require("child_process");
 require("dotenv").config();
 
-// Bake a build identifier into the bundle so the landing page can
-// surface "which iteration of the app is this?" without us hand-
-// editing .env each session. Falls back gracefully if git is missing
-// or the repo is shallow.
+// Bake a sequential build identifier into the bundle so the landing
+// page can surface "which iteration of the app is this?" without us
+// hand-editing .env each session. Counts total commits in HEAD's
+// history and offsets so that THIS build reads `iter-100` — every
+// future commit increments the number monotonically. Falls back
+// gracefully if git is missing or the repo is shallow.
+const BUILD_ID_OFFSET = 11; // chosen so first build prints iter-100
 try {
   if (!process.env.REACT_APP_BUILD_ID) {
-    const sha = execSync("git rev-parse --short HEAD", {
-      cwd: __dirname,
-      stdio: ["pipe", "pipe", "ignore"],
-    })
-      .toString()
-      .trim();
-    if (sha) process.env.REACT_APP_BUILD_ID = sha;
+    const count = parseInt(
+      execSync("git rev-list --count HEAD", {
+        cwd: __dirname,
+        stdio: ["pipe", "pipe", "ignore"],
+      })
+        .toString()
+        .trim(),
+      10,
+    );
+    if (Number.isFinite(count)) {
+      process.env.REACT_APP_BUILD_ID = `iter-${count + BUILD_ID_OFFSET}`;
+    }
   }
 } catch {
   /* no git, no problem — the landing badge just won't render */
