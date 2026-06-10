@@ -30,9 +30,16 @@ export async function fanOutSsoBridge() {
           // `no-cors` because peers run on a different origin and we
           // don't care about reading the body — we just want the peer
           // to set ITS cookie on ITS domain via the Set-Cookie header.
+          //
+          // CRITICAL: in no-cors mode the browser STRIPS all custom
+          // headers (including X-Forge-Suite-Token). We therefore send
+          // the JWT in the request BODY with Content-Type: text/plain
+          // — a CORS-safelisted content type that survives no-cors.
+          // Peers accept the token from either header or body.
           mode: "no-cors",
           credentials: "include",
-          headers: { "X-Forge-Suite-Token": token },
+          headers: { "Content-Type": "text/plain" },
+          body: token,
         }),
       ),
     );

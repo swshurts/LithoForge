@@ -134,10 +134,28 @@ def build_sso_bridge_router(
     @router.post("/sso-bridge")
     async def accept_bridge(request: Request, response: Response):
         """Verify a peer-minted JWT, upsert the user by email, set a
-        LithoForge session cookie, return the user payload."""
+        LithoForge session cookie, return the user payload.
+
+        Token can arrive two ways for `no-cors`/`cors`-mode flexibility:
+          - `X-Forge-Suite-Token` header — works only in CORS mode
+            (browsers strip custom headers in `no-cors` requests)
+          - request body as plain text — works in `no-cors` mode using
+            the safelisted `text/plain` Content-Type
+        Both peer apps' fan-out helpers may use either path.
+        """
         token = request.headers.get("X-Forge-Suite-Token")
         if not token:
-            raise HTTPException(400, detail="Missing X-Forge-Suite-Token header.")
+            # Fall back to body. We strip whitespace because some
+            # fetch wrappers add a trailing newline.
+            try:
+                body_bytes = await request.body()
+                token = body_bytes.decode("utf-8", errors="ignore").strip()
+            except Exception:
+                token = ""
+        if not token or "." not in token:
+            raise HTTPException(
+                400, detail="Missing token (header X-Forge-Suite-Token or text/plain body).",
+            )
         try:
             payload = jwt.decode(token, _get_secret(), algorithms=[JWT_ALGO])
         except jwt.ExpiredSignatureError:

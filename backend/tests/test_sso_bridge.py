@@ -130,10 +130,19 @@ class TestMint:
 # ---------------------------------------------------------------------------
 
 class TestAccept:
-    def test_missing_header_returns_400(self):
+    def test_missing_token_returns_400(self):
+        """No header, no body — backend rejects with a helpful message
+        mentioning both delivery paths."""
         r = requests.post(f"{API}/auth/sso-bridge")
         assert r.status_code == 400
-        assert "Missing" in r.text
+        assert "Missing token" in r.text
+        # Empty body counts as missing.
+        r = requests.post(
+            f"{API}/auth/sso-bridge",
+            data="",
+            headers={"Content-Type": "text/plain"},
+        )
+        assert r.status_code == 400
 
     def test_bad_token_returns_401(self):
         r = requests.post(
@@ -197,6 +206,31 @@ class TestAccept:
         assert "samesite=none" in sc
         assert "secure" in sc
         assert "httponly" in sc
+
+    def test_token_in_body_works_for_no_cors_mode(self):
+        """Browsers strip custom headers in `no-cors` mode, so peers
+        send the JWT in the body with Content-Type: text/plain. This
+        is the path that the fan-out helper actually uses in
+        production."""
+        token = _mint_peer_token(email="bridge-body-token@example.com")
+        r = requests.post(
+            f"{API}/auth/sso-bridge",
+            data=token,
+            headers={"Content-Type": "text/plain"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["user"]["email"] == "bridge-body-token@example.com"
+        assert "session_token=" in r.headers.get("set-cookie", "").lower()
+
+    def test_token_in_body_with_trailing_whitespace_still_works(self):
+        """Some fetch wrappers add trailing newlines — backend strips."""
+        token = _mint_peer_token(email="bridge-trim@example.com")
+        r = requests.post(
+            f"{API}/auth/sso-bridge",
+            data=f"  {token}  \n",
+            headers={"Content-Type": "text/plain"},
+        )
+        assert r.status_code == 200, r.text
 
     def test_user_persisted_in_db(self):
         token = _mint_peer_token(email="bridge-persist@example.com")
