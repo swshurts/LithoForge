@@ -111,14 +111,59 @@ export const sendToForgeSlicer = ({
       `[LithoForge→ForgeSlicer] handoff starting from origin ${window.location.origin} → ${FORGESLICER_ORIGIN}`,
     );
 
-    // 1. Open the popup synchronously from the user gesture.
-    const popup = window.open(FORGESLICER_HANDOFF_URL, "_blank");
+    // 1. Open the popup synchronously from the user gesture so popup
+    //    blockers don't swallow it. We open `about:blank` first, then
+    //    asynchronously mint an SSO token and redirect the popup
+    //    through ForgeSlicer's /auth/sso-accept page so the handoff
+    //    lands ALREADY SIGNED IN. If minting fails (e.g. user isn't
+    //    signed into LithoForge), we fall back to the raw handoff URL
+    //    and the user signs in manually on ForgeSlicer — preserving
+    //    the pre-SSO behaviour.
+    const popup = window.open("about:blank", "_blank");
     if (!popup || popup.closed || typeof popup.closed === "undefined") {
       reject(new PopupBlocked(
         "ForgeSlicer popup was blocked — allow popups for this site to use the handoff.",
       ));
       return;
     }
+
+    // Resolve the popup URL: SSO-wrapped if we can mint a token,
+    // raw otherwise. Either way, do it async without blocking the
+    // postMessage listener attach below — the popup may load before
+    // we redirect it, that's fine (it'll just show the cold handoff
+    // page until our redirect lands).
+    (async () => {
+      try {
+        const { API: lithoApi } = await import("./api");
+        const mintRes = await fetch(`${lithoApi}/auth/sso-bridge/mint`, {
+          credentials: "include",
+        });
+        if (!mintRes.ok) {
+          popup.location.replace(FORGESLICER_HANDOFF_URL);
+          return;
+        }
+        const { token } = await mintRes.json();
+        if (!token) {
+          popup.location.replace(FORGESLICER_HANDOFF_URL);
+          return;
+        }
+        // Ride through ForgeSlicer's /auth/sso-accept so the cookie
+        // is first-party, then it forwards us to /handoff where the
+        // existing postMessage flow continues. The handoff path is
+        // a relative `return` so SsoAccept's open-redirect guard
+        // (regex: /^\/[A-Za-z0-9\-_/]*$/) accepts it.
+        const ssoUrl = new URL(`${FORGESLICER_ORIGIN}/auth/sso-accept`);
+        ssoUrl.searchParams.set("token", token);
+        ssoUrl.searchParams.set("return", "/handoff");
+        popup.location.replace(ssoUrl.toString());
+      } catch {
+        // Any failure → degrade to the cold handoff. Worst case the
+        // user sees ForgeSlicer's sign-in screen.
+        try { popup.location.replace(FORGESLICER_HANDOFF_URL); } catch {
+          /* popup may have been closed by the user */
+        }
+      }
+    })();
 
     // 2. Pre-attach the listener IMMEDIATELY so we don't miss the
     //    `ready` ping that ForgeSlicer fires before our fetch resolves.
