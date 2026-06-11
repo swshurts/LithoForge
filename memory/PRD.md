@@ -1135,6 +1135,18 @@ indexing if your slicer pipeline needs it.
 
 ## Backlog
 
+## Voice command robustness (2026-06-11, iter-106)
+
+User reported persistent `not-allowed` mic errors in Chrome/Edge **despite** granting browser + OS permissions (standalone tab, not iframe). Root issue: the Web Speech API collapses every block reason into one opaque error. Hardened `VoiceCommand.jsx`:
+
+- **getUserMedia pre-flight** before starting speech recognition. Distinguishes and toasts the *real* cause: browser permission (`NotAllowedError`), **OS-level block** (`NotAllowedError` + "system" in message → Windows/macOS privacy-settings instructions), no mic device (`NotFoundError`), mic held by another app/antivirus (`NotReadableError`), iframe embedding (`window.self !== window.top`).
+- **"Requesting microphone…" modal state** opens instantly on FAB click; 10s timeout on the pre-flight falls through to typed input (covers hung permission prompts).
+- **Typed-prompt fallback**: new `typing` phase with editable textarea (`data-testid="voice-typed-input"`) + Run/Cancel. Also used for unsupported browsers (Firefox/Brave) — FAB is no longer disabled there. Transcript is editable in the confirm step too.
+- **Moved mic FAB** from `bottom-5` to `bottom-20` — the "Made with Emergent" badge overlapped it and swallowed clicks.
+
+Verified via Playwright: FAB click → requesting modal → precise diagnostic toast ("No microphone found" in headless container) → typing fallback → Run/Cancel wired. Voice-prompt event path to Meshy unchanged.
+
+
 ## Code review rebuttals (2026-02-28)
 
 Auto-generated code review (env `9903f5df`) flagged 100+ items. After auditing each, **7 were applied**, **5 were declined with documented reasoning**, and the rest were stylistic or false-positive. Future reviews should not re-raise the declined items.

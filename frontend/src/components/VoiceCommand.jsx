@@ -19,7 +19,7 @@
  *  A server-side Whisper fallback is wired but stubbed at this phase.
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Play, X, Loader2, Pause } from "lucide-react";
+import { Mic, MicOff, Play, X, Loader2, Pause, Keyboard } from "lucide-react";
 import { toast } from "sonner";
 
 const SILENCE_MS_DEFAULT = 5000;
@@ -49,6 +49,8 @@ export default function VoiceCommand() {
   const [continuous, setContinuous] = useState(false);
 
   const recognitionRef = useRef(null);
+  const phaseRef = useRef("idle");
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
   const silenceTimerRef = useRef(null);
   const idleTimerRef = useRef(null);
   const silenceDurationRef = useRef(SILENCE_MS_DEFAULT);
@@ -197,16 +199,106 @@ export default function VoiceCommand() {
     try { r.start(); } catch { /* already running */ }
   }, [armSilenceTimer, armIdleTimer, close, phase]);
 
-  const openMic = useCallback(() => {
+  /** Pre-flight the mic with getUserMedia so we can surface the REAL
+   *  block reason — the Web Speech API collapses everything into a
+   *  generic "not-allowed". Returns true when the mic is usable. */
+  const preflightMic = useCallback(async () => {
+    if (window.self !== window.top) {
+      toast.error("Mic blocked by embedding", {
+        description:
+          "This page is running inside an iframe which blocks microphone access. Open the app in its own browser tab.",
+        duration: 9000,
+      });
+      return false;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error("Microphone unavailable", {
+        description: "This browser does not expose microphone access on this page.",
+      });
+      return false;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+      return true;
+    } catch (err) {
+      const msg = (err?.message || "").toLowerCase();
+      if (err?.name === "NotAllowedError" && msg.includes("system")) {
+        toast.error("Blocked by operating system", {
+          description:
+            "Your OS is blocking the microphone for this browser. Windows: Settings → Privacy & security → Microphone → turn ON 'Microphone access' AND 'Let desktop apps access your microphone'. macOS: System Settings → Privacy & Security → Microphone → enable your browser, then restart it.",
+          duration: 12000,
+        });
+      } else if (err?.name === "NotAllowedError") {
+        toast.error("Microphone blocked by browser", {
+          description:
+            "Click the 🔒 padlock in your address bar → Site settings → set Microphone to Allow, then reload the page.",
+          duration: 9000,
+        });
+      } else if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError") {
+        toast.error("No microphone found", {
+          description: "No microphone device was detected. Plug one in or check your sound settings.",
+          duration: 9000,
+        });
+      } else if (err?.name === "NotReadableError" || err?.name === "TrackStartError") {
+        toast.error("Microphone busy", {
+          description:
+            "Another app (or antivirus webcam/mic protection) is holding the microphone. Close other apps using the mic and try again.",
+          duration: 9000,
+        });
+      } else {
+        toast.error(`Mic check failed: ${err?.name || "unknown"}`, {
+          description: err?.message || "Unknown microphone error.",
+          duration: 9000,
+        });
+      }
+      return false;
+    }
+  }, []);
+
+  const openMic = useCallback(async () => {
     if (phase !== "idle") return;
     setTranscript("");
     setInterim("");
+    if (!IS_SUPPORTED) {
+      toast("Voice not supported in this browser", {
+        description: "Type your prompt below instead.",
+      });
+      setPhase("typing");
+      armIdleTimer();
+      return;
+    }
+    // Show the modal right away so the UI responds instantly while the
+    // browser permission prompt (if any) is on screen.
+    setPhase("requesting");
+    armIdleTimer();
+    const micOk = await Promise.race([
+      preflightMic(),
+      new Promise((resolve) =>
+        setTimeout(() => {
+          toast("Mic permission still pending", {
+            description:
+              "Type your prompt below instead — or grant microphone access and click the mic again.",
+            duration: 8000,
+          });
+          resolve(false);
+        }, 10000),
+      ),
+    ]);
+    // User may have closed the dialog while we waited.
+    if (phaseRef.current !== "requesting") return;
+    if (!micOk) {
+      // Fall back to typed input so the feature stays usable.
+      setPhase("typing");
+      armIdleTimer();
+      return;
+    }
     setPhase("listening");
     silenceDurationRef.current = SILENCE_MS_DEFAULT;
     armSilenceTimer(SILENCE_MS_DEFAULT);
     armIdleTimer();
     startRecognition();
-  }, [phase, armSilenceTimer, armIdleTimer, startRecognition]);
+  }, [phase, armSilenceTimer, armIdleTimer, startRecognition, preflightMic]);
 
   // While the dialog is open, listen for voice "run"/"cancel" from
   // the user. We restart STT briefly just for the confirm gesture.
@@ -240,10 +332,9 @@ export default function VoiceCommand() {
     <>
       <button
         onClick={openMic}
-        disabled={!IS_SUPPORTED}
-        title={IS_SUPPORTED ? "Voice command" : "Voice not supported in this browser"}
+        title={IS_SUPPORTED ? "Voice command" : "Voice not supported — opens typed prompt"}
         data-testid="voice-mic-fab"
-        className="fixed bottom-5 right-5 z-40 w-12 h-12 rounded-full bg-zinc-100 text-zinc-950 hover:bg-amber-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg flex items-center justify-center transition-colors"
+        className="fixed bottom-20 right-5 z-40 w-12 h-12 rounded-full bg-zinc-100 text-zinc-950 hover:bg-amber-200 shadow-lg flex items-center justify-center transition-colors"
       >
         {IS_SUPPORTED ? <Mic size={18} /> : <MicOff size={18} />}
       </button>
@@ -256,7 +347,9 @@ export default function VoiceCommand() {
           <div className="w-full max-w-xl bg-zinc-900 border border-zinc-800 p-6 space-y-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                {phase === "confirming" ? (
+                {phase === "typing" ? (
+                  <Keyboard size={20} className="text-amber-400" data-testid="voice-typing-icon" />
+                ) : phase === "confirming" ? (
                   <Mic size={20} className="text-amber-400" data-testid="voice-confirm-icon" />
                 ) : phase === "paused" ? (
                   <Pause size={20} className="text-amber-300" data-testid="voice-paused-icon" />
@@ -264,8 +357,10 @@ export default function VoiceCommand() {
                   <Mic size={20} className="text-emerald-400 animate-pulse" data-testid="voice-listening-icon" />
                 )}
                 <div className="font-display font-bold text-lg">
-                  {phase === "confirming" ? "Confirm prompt" :
-                   phase === "paused" ? "Listening (paused, 20s window)" : "Listening…"}
+                  {phase === "typing" ? "Type your prompt" :
+                   phase === "confirming" ? "Confirm prompt" :
+                   phase === "paused" ? "Listening (paused, 20s window)" :
+                   phase === "requesting" ? "Requesting microphone…" : "Listening…"}
                 </div>
               </div>
               <button
@@ -278,15 +373,27 @@ export default function VoiceCommand() {
               </button>
             </div>
 
-            <div
-              className="bg-zinc-950 border border-zinc-800 p-4 min-h-[100px] font-mono text-sm text-zinc-100 whitespace-pre-wrap"
-              data-testid="voice-transcript"
-            >
-              {transcript || <span className="text-zinc-600">Start speaking…</span>}
-              {interim && <span className="text-zinc-500"> {interim}</span>}
-            </div>
+            {phase === "typing" || phase === "confirming" ? (
+              <textarea
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+                placeholder={phase === "typing" ? "Describe what to generate, e.g. 'a lighthouse on a rocky cliff at sunset'" : ""}
+                autoFocus
+                rows={4}
+                data-testid="voice-typed-input"
+                className="w-full bg-zinc-950 border border-zinc-800 p-4 min-h-[100px] font-mono text-sm text-zinc-100 resize-y focus:outline-none focus:border-amber-400/60 placeholder:text-zinc-600"
+              />
+            ) : (
+              <div
+                className="bg-zinc-950 border border-zinc-800 p-4 min-h-[100px] font-mono text-sm text-zinc-100 whitespace-pre-wrap"
+                data-testid="voice-transcript"
+              >
+                {transcript || <span className="text-zinc-600">Start speaking…</span>}
+                {interim && <span className="text-zinc-500"> {interim}</span>}
+              </div>
+            )}
 
-            {phase === "confirming" ? (
+            {phase === "confirming" || phase === "typing" ? (
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => runCommand(transcript)}
@@ -307,7 +414,9 @@ export default function VoiceCommand() {
               <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.18em] text-zinc-500">
                 <span className="flex items-center gap-2">
                   <Loader2 size={12} className="animate-spin" />
-                  Say &quot;pause&quot; to extend, &quot;run&quot; to confirm, &quot;cancel&quot; to quit
+                  {phase === "requesting"
+                    ? "Waiting for browser microphone permission…"
+                    : 'Say "pause" to extend, "run" to confirm, "cancel" to quit'}
                 </span>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
