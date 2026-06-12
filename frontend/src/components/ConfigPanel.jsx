@@ -60,7 +60,9 @@ export const ConfigPanel = ({
   // ---- Nozzle → layer-height constraints --------------------------------
   // Practical window is 25%–80% of nozzle Ø: below 25% extrusion gets
   // inconsistent, above 80% layers no longer bond reliably.
-  const ALL_LAYER_HEIGHTS = [0.06, 0.08, 0.1, 0.12, 0.16, 0.2, 0.24, 0.28, 0.32];
+  const ALL_LAYER_HEIGHTS = [
+    0.06, 0.08, 0.1, 0.12, 0.16, 0.2, 0.24, 0.28, 0.32, 0.4, 0.48, 0.56, 0.64,
+  ];
   const nozzle = config.nozzle_mm ?? 0.4;
   const lhMin = +(nozzle * 0.25).toFixed(3);
   const lhMax = +(nozzle * 0.8).toFixed(3);

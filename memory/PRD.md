@@ -1135,6 +1135,17 @@ indexing if your slicer pipeline needs it.
 
 ## Backlog
 
+## Catalog expansion — printers / filaments / nozzles (2026-06-12, iter-107)
+
+User reported printer selection was too limited. Researched current (2024–2026) hardware and expanded all catalogs:
+
+- **Printers** (`printers.py`): 18 → **56 profiles**. Added Bambu H2D/X1E/P1P, Creality K2 Plus (CFS)/K1C/K1 SE/K1 Max/Hi/Ender-3 V3 family/CR-10 SE/Ender-3 V2, Anycubic Kobra 3 & 3 Max & S1 (ACE Pro), QIDI Q1 Pro/Plus4 (±Box)/X-Max 3, Flashforge AD5X (IFS), Prusa MK3S+/CORE One/CORE One L/MK4S+MMU3, Elegoo Neptune 4 Plus/Max, Sovol SV06/+, AnkerMake M5/M5C, Artillery X4 Plus, Snapmaker J1s (IDEX), Two Trees SK1, Kingroon, Voron 0.2/Trident, RatRig V-Core 3. New per-profile fields: `nozzle_sizes_mm`, `default_nozzle_mm`, `tool_slots` (drives T-command overflow→M600 in `build_layer_change_gcode`; MMU3/XL=5, IDEX=2). All 18 legacy IDs preserved.
+- **Filaments** (`manufacturer_library.py`): ~150 → **411 SKUs across 19 brands** with new `material` field (314 PLA / 97 PETG). New brands: Elegoo, Creality, Anycubic, Eryone, Inland, JAYO, Duramic, Atomic, Geeetech, Amazon Basics + PETG lines for Bambu/Polymaker/Prusament/eSun/Sunlu/Overture/Hatchbox/FlashForge. `filament_library_api.py` browse + hex-search now accept `material` filter; private filaments & suggestions store material.
+- **Nozzles (full integration)**: `nozzle_mm` on OptimizeIn → stored with job → written into 3MF `project_settings.config` (`nozzle_diameter`, `cmykw_nozzle_mm`) and swap.txt header. UI: new `NozzleSelect.jsx` shows only the selected printer's sizes, auto-snaps on printer change; layer-height options constrained to 25–80% of Ø (0.06–0.64 mm option ladder) with auto-clamp + range hint; amber detail-loss warning for ≥0.6 mm, slow-print note for ≤0.25 mm.
+- **UI**: `PrinterSelect.jsx` rebuilt as a searchable combobox (Popover+Command, grouped by slicer family, shows bed size + AMS/MMU tag). `listPrinters` memoized in `api.js`. FilamentLibraryDialog has Material chips (All/PLA/PETG), PETG row badges, material selects on private-filament + suggestion forms.
+
+Testing: 151/151 pytests (new `tests/test_catalogs.py`, 14 tests) + testing-agent frontend run `iteration_7.json` 100% pass (search, per-printer nozzles, auto-snap, layer window, material filter, e2e generate).
+
 ## Voice command robustness (2026-06-11, iter-106)
 
 User reported persistent `not-allowed` mic errors in Chrome/Edge **despite** granting browser + OS permissions (standalone tab, not iframe). Root issue: the Web Speech API collapses every block reason into one opaque error. Hardened `VoiceCommand.jsx`:

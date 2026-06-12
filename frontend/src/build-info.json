@@ -1,4 +1,4 @@
 {
-  "iter": 106,
+  "iter": 107,
   "note": "Bump the `iter` value with every meaningful preview commit. Read by LandingPage to render the build badge. Tracked in git so production deploys see it without needing git history at build time."
 }
