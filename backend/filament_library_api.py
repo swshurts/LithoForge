@@ -129,6 +129,7 @@ class PrivateFilamentIn(BaseModel):
     hex: str = Field(..., min_length=4, max_length=9)
     td: float = Field(..., gt=0, le=20)
     finish: Literal["gloss", "matte", "silk", "transparent"] = "gloss"
+    material: Literal["PLA", "PETG"] = "PLA"
 
 
 class SuggestionIn(BaseModel):
@@ -137,6 +138,7 @@ class SuggestionIn(BaseModel):
     hex: str = Field(..., min_length=4, max_length=9)
     td: float = Field(..., gt=0, le=20)
     finish: Literal["gloss", "matte", "silk", "transparent"] = "gloss"
+    material: Literal["PLA", "PETG"] = "PLA"
     submitter_email: Optional[str] = Field(None, max_length=200)
     notes: Optional[str] = Field(None, max_length=2000)
 
@@ -162,12 +164,15 @@ def build_filament_library_router(db, require_user_dep, get_current_user_dep):
     @router.get("")
     async def browse(
         brand: Optional[str] = None,
+        material: Optional[Literal["PLA", "PETG"]] = None,
         q: Optional[str] = Query(None, description="Free-text search on name"),
         limit: int = Query(500, ge=1, le=1000),
     ) -> Dict[str, Any]:
         items = [f.as_dict() for f in CATALOG]
         if brand:
             items = [f for f in items if f["brand"].lower() == brand.lower()]
+        if material:
+            items = [f for f in items if f["material"] == material]
         if q:
             ql = q.lower()
             items = [f for f in items if ql in f["name"].lower()]
@@ -183,6 +188,7 @@ def build_filament_library_router(db, require_user_dep, get_current_user_dep):
         algo: Literal["de76", "de2000"] = "de76",
         limit: int = Query(10, ge=1, le=50),
         brand: Optional[str] = None,
+        material: Optional[Literal["PLA", "PETG"]] = None,
         include_private: bool = False,
         user=Depends(get_current_user_dep),
     ) -> Dict[str, Any]:
@@ -197,6 +203,8 @@ def build_filament_library_router(db, require_user_dep, get_current_user_dep):
         for fil, lab in _CATALOG_LAB:
             if brand and fil.brand.lower() != brand.lower():
                 continue
+            if material and fil.material != material:
+                continue
             d = de(target_lab, lab)
             scored.append({**fil.as_dict(), "delta_e": round(d, 2), "source": "manufacturer"})
 
@@ -208,6 +216,8 @@ def build_filament_library_router(db, require_user_dep, get_current_user_dep):
                 {"user_id": user.user_id}, {"_id": 0}
             )
             async for doc in cursor:
+                if material and doc.get("material", "PLA") != material:
+                    continue
                 try:
                     lab = _rgb_to_lab(_hex_to_rgb(doc["hex"]))
                 except Exception:
@@ -219,6 +229,7 @@ def build_filament_library_router(db, require_user_dep, get_current_user_dep):
                     "hex": doc["hex"].upper(),
                     "td": doc["td"],
                     "finish": doc.get("finish", "gloss"),
+                    "material": doc.get("material", "PLA"),
                     "delta_e": round(de(target_lab, lab), 2),
                     "source": "private",
                 })
@@ -271,12 +282,14 @@ def build_filament_library_router(db, require_user_dep, get_current_user_dep):
             "hex": body.hex.upper(),
             "td": body.td,
             "finish": body.finish,
+            "material": body.material,
             "created_at": datetime.now(timezone.utc),
         }
         await db.user_filaments.insert_one(doc)
         return {
             "id": fid, "brand": body.brand, "name": body.name,
             "hex": body.hex.upper(), "td": body.td, "finish": body.finish,
+            "material": body.material,
             "source": "private",
         }
 
@@ -308,6 +321,7 @@ def build_filament_library_router(db, require_user_dep, get_current_user_dep):
             "hex": body.hex.upper(),
             "td": body.td,
             "finish": body.finish,
+            "material": body.material,
             "submitter_email": body.submitter_email,
             "submitter_user_id": (user.user_id if user else None),
             "notes": body.notes,
@@ -347,7 +361,8 @@ def build_filament_library_router(db, require_user_dep, get_current_user_dep):
                 pool.append({
                     "id": fil.id, "brand": fil.brand, "name": fil.name,
                     "hex": fil.hex.upper(), "td": fil.td,
-                    "finish": fil.finish, "source": "manufacturer",
+                    "finish": fil.finish, "material": fil.material,
+                    "source": "manufacturer",
                     "_lab": lab,
                 })
         if body.scope in ("mine", "both"):
@@ -367,6 +382,7 @@ def build_filament_library_router(db, require_user_dep, get_current_user_dep):
                         "id": doc.get("id"), "brand": doc.get("brand", "Private"),
                         "name": doc["name"], "hex": doc["hex"].upper(),
                         "td": doc["td"], "finish": doc.get("finish", "gloss"),
+                        "material": doc.get("material", "PLA"),
                         "source": "private", "_lab": lab,
                     })
 

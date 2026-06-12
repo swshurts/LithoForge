@@ -35,6 +35,9 @@ const DEFAULT_CONFIG = {
   // Matboard frame width (mm) — painting mode only, 0 = off.
   frame_mm: 0,
   printer_id: "generic_orca",
+  // Nozzle diameter (mm) — constrains the layer-height window (25–80%
+  // of Ø) and is written into the exported 3MF metadata.
+  nozzle_mm: 0.4,
   // Minimum base-filament floor (layers) — fills any zero-thickness
   // voids in the heightmap so the 3MF has no holes. Range 1..5; the
   // backend defaults to 2 if the query param is omitted.
@@ -352,6 +355,8 @@ export default function App() {
       render_mode: req.render_mode ?? c.render_mode,
       relief: req.relief ?? c.relief,
       frame_mm: req.frame_mm ?? c.frame_mm,
+      printer_id: req.printer_id ?? c.printer_id,
+      nozzle_mm: req.nozzle_mm ?? c.nozzle_mm,
     }));
     if (job.filaments?.length) {
       setFilaments(job.filaments);

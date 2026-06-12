@@ -119,6 +119,7 @@ class OptimizeIn(BaseModel):
     smoothing: float = 0.0           # painting mode only — 0..1, softens speckle
     frame_mm: float = 0.0            # painting mode only — matboard border width (mm)
     printer_id: str = "generic_orca"  # printer profile id from /api/printers
+    nozzle_mm: float = 0.4            # nozzle diameter (drives layer bounds + 3MF metadata)
     license: str = ""                 # creator-declared license (free text or preset)
 
 
@@ -472,6 +473,7 @@ def _build_export(
         printer_id=printer_id,
         license_text=req.get("license", "") or "",
         base_min_layers=base_min_layers,
+        nozzle_mm=float(req.get("nozzle_mm", 0.4) or 0.4),
     )
     return export
 

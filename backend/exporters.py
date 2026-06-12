@@ -834,6 +834,7 @@ def build_swap_instructions(
     filament_names: List[str],
     layer_height_mm: float,
     profile: Optional[PrinterProfile] = None,
+    nozzle_mm: float = 0.4,
 ) -> str:
     """Generate a paste-ready, multi-slicer swap-instruction document."""
     if profile is None:
@@ -851,6 +852,7 @@ def build_swap_instructions(
         f";   slicer family  = {profile['slicer_family']}",
         f";   swap mechanism = {'tool change (AMS / multi-tool)' if multi_tool else 'M600 manual pause'}",
         f";   layer height   = {layer_height_mm} mm",
+        f";   nozzle         = {nozzle_mm} mm",
         f";   color swaps   = {len(swap_layer_indices)}",
         "; ====================================================================",
         ";",
@@ -964,6 +966,7 @@ def _project_config(
     layer_height_mm: float,
     profile: PrinterProfile,
     license_text: str = "",
+    nozzle_mm: float = 0.4,
 ) -> str:
     """Bambu/Orca/Prusa-compatible project settings subset.
 
@@ -1001,12 +1004,14 @@ def _project_config(
             f"0x{profile['bed_y_mm']}",
         ],
         "printable_height": profile["max_z_mm"],
+        "nozzle_diameter": [nozzle_mm],
 
         # Reference data for tooling that reads this file.
         "cmykw_swap_heights_mm": swap_heights_mm,
         "cmykw_swap_colors": colors,
         "cmykw_swap_layers": swap_layer_indices,
         "cmykw_multi_tool": profile["multi_tool"],
+        "cmykw_nozzle_mm": nozzle_mm,
     }
     if license_text:
         cfg["cmykw_license"] = license_text
@@ -1024,6 +1029,7 @@ def write_3mf(
     per_filament_slabs: Optional[
         List[Tuple[int, np.ndarray, np.ndarray]]
     ] = None,
+    nozzle_mm: float = 0.4,
 ) -> bytes:
     """Build a 3MF container with the mesh + color metadata.
 
@@ -1045,7 +1051,8 @@ def write_3mf(
     else:
         model_xml = _mesh_to_3mf_model(vertices, faces)
     project_cfg = _project_config(
-        filaments, swap_heights_mm, layer_height_mm, profile, license_text
+        filaments, swap_heights_mm, layer_height_mm, profile, license_text,
+        nozzle_mm=nozzle_mm,
     )
 
     buf = io.BytesIO()
@@ -1076,6 +1083,7 @@ def build_export(
     printer_id: str = "generic_orca",
     license_text: str = "",
     base_min_layers: int = 2,
+    nozzle_mm: float = 0.4,
 ) -> dict:
     profile = get_profile(printer_id)
     # Clamp to the UI's exposed range so a stray API caller can't blow
@@ -1084,7 +1092,8 @@ def build_export(
     vertices, faces = _build_mesh(layer_map, layer_height_mm, geo, base_min_layers)
     stl_bytes = write_stl_binary(vertices, faces)
     swap_txt = build_swap_instructions(
-        swap_heights_mm, swap_colors, filament_names, layer_height_mm, profile
+        swap_heights_mm, swap_colors, filament_names, layer_height_mm, profile,
+        nozzle_mm=nozzle_mm,
     )
     filaments = list(zip(filament_names, swap_colors))
 
@@ -1106,6 +1115,7 @@ def build_export(
         vertices, faces, filaments, swap_heights_mm, layer_height_mm,
         profile, license_text,
         per_filament_slabs=per_filament_slabs,
+        nozzle_mm=nozzle_mm,
     )
     return {
         "stl": stl_bytes,
@@ -1116,4 +1126,5 @@ def build_export(
         "printer_id": profile["id"],
         "supported_formats": profile["supported_formats"],
         "base_min_layers": base_min_layers,
+        "nozzle_mm": nozzle_mm,
     }

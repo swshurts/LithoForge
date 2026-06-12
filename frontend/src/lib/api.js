@@ -58,10 +58,11 @@ export const getManufacturerBrands = async () => {
 
 export const searchManufacturerByHex = async (
   hex,
-  { algo = "de76", limit = 10, brand, includePrivate = false } = {},
+  { algo = "de76", limit = 10, brand, material, includePrivate = false } = {},
 ) => {
   const params = { hex, algo, limit };
   if (brand) params.brand = brand;
+  if (material) params.material = material;
   if (includePrivate) params.include_private = true;
   const { data } = await api.get("/filament-library/search", { params });
   return data;
@@ -166,9 +167,20 @@ export const getCreatorProfile = async (userId) => {
 };
 
 // --- Printer profiles ----------------------------------------------
+// Memoized — the catalog is static per session and several components
+// (PrinterSelect, NozzleSelect, ConfigPanel) need it simultaneously.
+let _printersPromise = null;
 export const listPrinters = async () => {
-  const { data } = await api.get("/printers");
-  return data.printers;
+  if (!_printersPromise) {
+    _printersPromise = api
+      .get("/printers")
+      .then(({ data }) => data.printers)
+      .catch((e) => {
+        _printersPromise = null;
+        throw e;
+      });
+  }
+  return _printersPromise;
 };
 
 export const checkBedFit = async (printerId, widthMm, heightMm) => {

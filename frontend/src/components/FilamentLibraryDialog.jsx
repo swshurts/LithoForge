@@ -29,6 +29,7 @@ const TAB_MINE = "mine";
 const TAB_SUGGEST = "suggest";
 
 const FINISHES = ["gloss", "matte", "silk", "transparent"];
+const MATERIALS = ["PLA", "PETG"];
 
 export const FilamentLibraryDialog = ({
   open,
@@ -41,6 +42,7 @@ export const FilamentLibraryDialog = ({
   const [hex, setHex] = useState(initialHex);
   const [algo, setAlgo] = useState("de76");
   const [brandFilter, setBrandFilter] = useState("");
+  const [materialFilter, setMaterialFilter] = useState("");
   const [brands, setBrands] = useState([]);
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -48,12 +50,12 @@ export const FilamentLibraryDialog = ({
   // Private library state
   const [mine, setMine] = useState([]);
   const [newFil, setNewFil] = useState({
-    brand: "", name: "", hex: "#888888", td: 1.5, finish: "gloss",
+    brand: "", name: "", hex: "#888888", td: 1.5, finish: "gloss", material: "PLA",
   });
   // Suggestion state
   const [suggestion, setSuggestion] = useState({
     brand: "", name: "", hex: "#888888", td: 1.5,
-    finish: "gloss", submitter_email: "", notes: "",
+    finish: "gloss", material: "PLA", submitter_email: "", notes: "",
   });
   const [submittingSuggestion, setSubmittingSuggestion] = useState(false);
 
@@ -79,6 +81,7 @@ export const FilamentLibraryDialog = ({
         const body = await searchManufacturerByHex(hex, {
           algo, limit: 15,
           brand: brandFilter || undefined,
+          material: materialFilter || undefined,
           includePrivate: !!user,
         });
         setResults(body.results);
@@ -89,7 +92,7 @@ export const FilamentLibraryDialog = ({
       }
     }, 180);
     return () => clearTimeout(t);
-  }, [hex, algo, brandFilter, open, user]);
+  }, [hex, algo, brandFilter, materialFilter, open, user]);
 
   const reloadMine = async () => {
     try { setMine(await listPrivateFilaments()); } catch { /* noop */ }
@@ -107,7 +110,7 @@ export const FilamentLibraryDialog = ({
         td: parseFloat(newFil.td) || 1.5,
       });
       toast.success("Saved to your private library");
-      setNewFil({ brand: "", name: "", hex: "#888888", td: 1.5, finish: "gloss" });
+      setNewFil({ brand: "", name: "", hex: "#888888", td: 1.5, finish: "gloss", material: "PLA" });
       reloadMine();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Could not save filament");
@@ -138,7 +141,7 @@ export const FilamentLibraryDialog = ({
       toast.success("Thanks! Suggestion sent for review.");
       setSuggestion({
         brand: "", name: "", hex: "#888888", td: 1.5,
-        finish: "gloss", submitter_email: "", notes: "",
+        finish: "gloss", material: "PLA", submitter_email: "", notes: "",
       });
     } catch (e) {
       toast.error("Could not submit suggestion");
@@ -239,8 +242,40 @@ export const FilamentLibraryDialog = ({
               </div>
             </div>
 
+            {/* Material chips */}
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-zinc-600 mr-1">
+                Material
+              </span>
+              <button
+                onClick={() => setMaterialFilter("")}
+                data-testid="library-material-all"
+                className={`px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] border transition-colors ${
+                  materialFilter === ""
+                    ? "bg-zinc-100 text-zinc-950 border-zinc-100"
+                    : "border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-600"
+                }`}
+              >
+                All
+              </button>
+              {MATERIALS.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMaterialFilter(materialFilter === m ? "" : m)}
+                  data-testid={`library-material-${m.toLowerCase()}`}
+                  className={`px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] border transition-colors ${
+                    materialFilter === m
+                      ? "bg-zinc-100 text-zinc-950 border-zinc-100"
+                      : "border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-600"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+
             {/* Brand chips */}
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
               <button
                 onClick={() => setBrandFilter("")}
                 data-testid="library-brand-all"
@@ -306,6 +341,11 @@ export const FilamentLibraryDialog = ({
                           MINE
                         </span>
                       )}
+                      {r.material === "PETG" && (
+                        <span className="ml-1 px-1 py-px font-mono text-[8px] uppercase tracking-[0.12em] bg-sky-950 text-sky-300 border border-sky-800">
+                          PETG
+                        </span>
+                      )}
                       {r.finish && r.finish !== "gloss" && (
                         <span className="ml-1 px-1 py-px font-mono text-[8px] uppercase tracking-[0.12em] border border-zinc-700 text-zinc-400">
                           {r.finish}
@@ -366,7 +406,7 @@ export const FilamentLibraryDialog = ({
                       data-testid="mine-name-input"
                     />
                   </div>
-                  <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-2">
+                  <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-2">
                     <input
                       type="color"
                       value={newFil.hex}
@@ -399,6 +439,14 @@ export const FilamentLibraryDialog = ({
                       data-testid="mine-finish-select"
                     >
                       {FINISHES.map((f) => <option key={f} value={f}>{f}</option>)}
+                    </select>
+                    <select
+                      value={newFil.material}
+                      onChange={(e) => setNewFil({ ...newFil, material: e.target.value })}
+                      className="bg-zinc-950 border border-zinc-800 font-mono text-xs h-8 px-2"
+                      data-testid="mine-material-select"
+                    >
+                      {MATERIALS.map((m) => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
                   <button
@@ -477,7 +525,7 @@ export const FilamentLibraryDialog = ({
                 data-testid="suggest-name-input"
               />
             </div>
-            <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-2">
+            <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-2">
               <input
                 type="color"
                 value={suggestion.hex}
@@ -506,6 +554,14 @@ export const FilamentLibraryDialog = ({
                 className="bg-zinc-950 border border-zinc-800 font-mono text-xs h-8 px-2"
               >
                 {FINISHES.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+              <select
+                value={suggestion.material}
+                onChange={(e) => setSuggestion({ ...suggestion, material: e.target.value })}
+                className="bg-zinc-950 border border-zinc-800 font-mono text-xs h-8 px-2"
+                data-testid="suggest-material-select"
+              >
+                {MATERIALS.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
             <Input

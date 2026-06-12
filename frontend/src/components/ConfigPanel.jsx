@@ -14,6 +14,7 @@ import { ImageEditPanel } from "./ImageEditPanel";
 import { PresetManager } from "./PresetManager";
 import { HelpHint } from "./HelpHint";
 import { PrinterSelect } from "./PrinterSelect";
+import { NozzleSelect } from "./NozzleSelect";
 
 const Row = ({ label, value, unit, children, testid, hint }) => (
   <div className="space-y-2" data-testid={testid}>
@@ -55,6 +56,33 @@ export const ConfigPanel = ({
   const update = (key, v) => setConfig((c) => ({ ...c, [key]: v }));
   const isPainting = config.render_mode === "painting";
   const isDisc = config.geometry === "disc";
+
+  // ---- Nozzle → layer-height constraints --------------------------------
+  // Practical window is 25%–80% of nozzle Ø: below 25% extrusion gets
+  // inconsistent, above 80% layers no longer bond reliably.
+  const ALL_LAYER_HEIGHTS = [0.06, 0.08, 0.1, 0.12, 0.16, 0.2, 0.24, 0.28, 0.32];
+  const nozzle = config.nozzle_mm ?? 0.4;
+  const lhMin = +(nozzle * 0.25).toFixed(3);
+  const lhMax = +(nozzle * 0.8).toFixed(3);
+  const layerOptions = ALL_LAYER_HEIGHTS.filter(
+    (h) => h >= lhMin - 1e-9 && h <= lhMax + 1e-9,
+  );
+  const lhLabel = (h) =>
+    h <= 0.08 ? "fine" : h <= 0.16 ? "standard" : h <= 0.24 ? "draft" : "coarse";
+
+  // Snap layer height into the nozzle's window whenever the nozzle changes.
+  React.useEffect(() => {
+    if (!layerOptions.length) return;
+    const current = config.layer_height_mm;
+    if (!layerOptions.some((h) => Math.abs(h - current) < 1e-9)) {
+      const nearest = layerOptions.reduce((a, b) =>
+        Math.abs(b - current) < Math.abs(a - current) ? b : a,
+      );
+      update("layer_height_mm", nearest);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nozzle]);
+
   // Hard cap is 7 swaps (= 8 filaments). The palette can grow to match
   // via `growPaletteTo` below, so the slider isn't artificially limited
   // by the user's current palette size.
@@ -184,6 +212,31 @@ export const ConfigPanel = ({
             <div className="font-mono text-[9px] text-zinc-600 mt-1 leading-relaxed">
               Drives bed size, layer-change G-code (M600 vs AMS tool change),
               and which export formats are recommended.
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
+              Nozzle
+            </Label>
+            <NozzleSelect
+              printerId={config.printer_id}
+              value={config.nozzle_mm ?? 0.4}
+              onChange={(v) => update("nozzle_mm", v)}
+              disabled={disabled}
+              testId="config-nozzle-select"
+            />
+            <div
+              className={`font-mono text-[9px] mt-1 leading-relaxed ${
+                nozzle >= 0.6 ? "text-amber-400" : "text-zinc-600"
+              }`}
+              data-testid="nozzle-detail-hint"
+            >
+              {nozzle >= 0.6
+                ? "Large nozzle — fine image detail will be lost in the print."
+                : nozzle <= 0.25
+                  ? "Small nozzle — maximum detail, but much longer print time."
+                  : `Allows ${lhMin.toFixed(2)}–${lhMax.toFixed(2)} mm layers. Written into the 3MF.`}
             </div>
           </div>
 
@@ -405,20 +458,24 @@ export const ConfigPanel = ({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="rounded-none bg-zinc-950 border-zinc-800">
-                <SelectItem value="0.08" className="font-mono text-xs rounded-none">
-                  0.08 mm (fine)
-                </SelectItem>
-                <SelectItem value="0.12" className="font-mono text-xs rounded-none">
-                  0.12 mm (standard)
-                </SelectItem>
-                <SelectItem value="0.16" className="font-mono text-xs rounded-none">
-                  0.16 mm (draft)
-                </SelectItem>
-                <SelectItem value="0.2" className="font-mono text-xs rounded-none">
-                  0.20 mm (draft+)
-                </SelectItem>
+                {layerOptions.map((h) => (
+                  <SelectItem
+                    key={h}
+                    value={String(h)}
+                    className="font-mono text-xs rounded-none"
+                  >
+                    {h.toFixed(2)} mm ({lhLabel(h)})
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            <div
+              className="font-mono text-[9px] text-zinc-600 mt-1"
+              data-testid="layer-height-range-hint"
+            >
+              {nozzle.toFixed(2)} mm nozzle → {lhMin.toFixed(2)}–{lhMax.toFixed(2)} mm
+              layer window (25–80% of Ø).
+            </div>
           </div>
 
           <Row
