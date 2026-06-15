@@ -1219,3 +1219,14 @@ Auto-generated code review (env `9903f5df`) flagged 100+ items. After auditing e
   - `StatsPanel`: when geometry=box, surfaces 3 additional download buttons under a "Lightbox parts · print separately" header
   - Backend mesh logic isolated in new `/app/backend/lightbox.py` (304 lines) — no CSG, axis-aligned primitives + circular extrusions only, watertight
   - Tests: 11 new mesh unit tests (`test_lightbox.py`) + 10 new HTTP integration tests (`test_lightbox_api.py` — added by testing agent). All 173 backend tests passing.
+
+## Implemented (2026-02-15 · iter-109)
+- [x] **Print-time + filament-cost estimate** in Stats panel
+  - Heuristic backend module `/app/backend/cost_estimator.py` (density-based weight, fixed throughput ≈12 mm/s extrusion, +3s/layer + 90s/swap overhead)
+  - Surfaced as new `cost_estimate` object on `/api/optimize` response (totals + per-filament breakdown)
+  - StatsPanel renders 3-card KPI strip (time / filament / cost) + per-filament rows with hex chip, weight, length-in-metres, USD cost (data-testid `cost-estimate-panel`, `cost-time`, `cost-weight`, `cost-usd`, `cost-row-{i}`)
+  - "Heuristic" tag + slicer disclaimer ("Real prints vary ±20%") to set user expectations
+- [x] **Voice prompt history (last 10)**
+  - localStorage-backed (key `lithoforge:voice-prompt-history`), deduped, capped at 10, most-recent-first
+  - `runCommand` and `replayHistory` both push to history; popover offers one-click re-dispatch of `voice-prompt` window event
+  - New UI: pill button next to mic FAB (only shown when phase=idle && history.length>0) opens a popover with each prompt + clear-all trash button (data-testids: `voice-history-btn`, `voice-history-popover`, `voice-history-item-{i}`, `voice-history-clear`)
