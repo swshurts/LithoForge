@@ -1205,3 +1205,17 @@ Auto-generated code review (env `9903f5df`) flagged 100+ items. After auditing e
 ### P3
 - Stripe paywall for high-resolution exports (>512px)
 - Community gallery of generated lithophanes
+
+## Implemented (2026-02-15 · iter-108)
+- [x] **Lightbox (box) geometry — 5th shape**
+  - User picks rect or round; lithophane prints flat (rect) or as a disc (round) to match
+  - Separate enclosure mesh emitted as 3 additional STLs:
+    - `lightbox-frame` (walls + front lithophane pocket + optional puck recess + optional perimeter string-LED channel)
+    - `lightbox-back` (friction-fit panel with always-on 6mm cable notch)
+    - `lightbox-diffuser` (optional, when `box_diffuser=true`)
+  - New `/api/export/{job_id}/lightbox-{frame|back|diffuser}` endpoints (creator-auth-gated, 400 if geometry≠box, 404 if diffuser disabled)
+  - `OptimizeIn` accepts `box_shape`, `box_outer_w_mm`, `box_outer_h_mm`, `box_depth_mm`, `box_wall_mm`, `box_led_mount` ("none"/"puck"/"strip"/"both"), `box_puck_diameter_mm`, `box_diffuser`, `box_cable_notch`
+  - `ConfigPanel`: new "Lightbox (rect / round)" item in geometry select; collapsible Lightbox config sub-panel with all controls (data-testid="lightbox-config")
+  - `StatsPanel`: when geometry=box, surfaces 3 additional download buttons under a "Lightbox parts · print separately" header
+  - Backend mesh logic isolated in new `/app/backend/lightbox.py` (304 lines) — no CSG, axis-aligned primitives + circular extrusions only, watertight
+  - Tests: 11 new mesh unit tests (`test_lightbox.py`) + 10 new HTTP integration tests (`test_lightbox_api.py` — added by testing agent). All 173 backend tests passing.
