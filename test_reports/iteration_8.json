@@ -1,0 +1,34 @@
+{
+  "summary": "Full backend + frontend validation of iter-108 Lightbox (box geometry) feature on LithoForge. All 162 existing backend tests + the new 11 mesh-builder tests pass. Added 10 new HTTP-level tests in tests/test_lightbox_api.py covering optimize-with-box, all three /export/{job_id}/lightbox-* endpoints, disabled-diffuser 404, flat-geometry 400, round-box masking and the STL/3MF regression — all 10 pass. Frontend tested via public REACT_APP_BACKEND_URL: ConfigPanel exposes the 5th geometry option, lightbox-config sub-panel renders all 8 controls, shape/led-mount visibility rules and diffuser toggle all behave correctly, and StatsPanel renders exactly the expected 3 base + 3 lightbox download buttons (with the diffuser button gated by box_diffuser) and hides them when geometry switches off box.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_scenarios": [
+    "BACKEND pytest: 162 existing tests still green (test_lightbox.py 11/11, full suite 162 passed in 21.65s).",
+    "BACKEND new HTTP suite (test_lightbox_api.py, 10/10 passed): optimize box-rect → job_id + light_throughput_pct; optimize box-round masks layer map (throughput differs from flat); /export/{id}/lightbox-frame, -back, -diffuser all return STL ≥200 bytes with media_type=model/stl; diffuser disabled → 404 detail='diffuser disabled for this job'; geometry=flat job hitting any lightbox endpoint → 400 with detail mentioning 'lightbox parts are only available'; round-box frame+back STLs both built; legacy /export/{id}/stl + /3mf still produce a valid lithophane mesh for box-rect (no regression).",
+    "FRONTEND ConfigPanel: geometry-select exposes exactly 5 options ['Flat rectangle', 'Curved panel', 'Cylindrical', 'Circular disc', 'Lightbox (rect / round)']. Selecting Lightbox reveals data-testid='lightbox-config' with all 8 expected controls (box-shape-select, box-outer-w-slider, box-outer-h-slider, box-depth-slider, box-wall-slider, box-led-mount-select, box-puck-slider, box-diffuser-toggle).",
+    "FRONTEND visibility rules: box-shape=round → box-outer-h-slider hidden (visible=False). box-led-mount=strip → box-puck-slider hidden; box-led-mount=both → box-puck-slider visible.",
+    "FRONTEND box-diffuser-toggle flips text 'On' → 'Off' on click.",
+    "FRONTEND StatsPanel after upload + Generate with geometry=box (diffuser On): lightbox-downloads-header + download-lightbox-frame + download-lightbox-back + download-lightbox-diffuser all rendered alongside download-stl/swaps/3mf. Toggling box_diffuser=Off removes only download-lightbox-diffuser. Switching geometry back to Flat removes all 4 lightbox elements and keeps the 3 base download buttons."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_lightbox.py",
+    "/app/backend/tests/test_lightbox_api.py (NEW — 10 HTTP integration tests)",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "lightbox.py:202 _clamp_spec() mutates a copy via LightboxSpec(**spec.__dict__) — fine, but consider dataclasses.replace() for clarity.",
+    "lightbox.py: cable notch is ONLY cut in the back panel, not the frame's -y wall (see comment 'Frame stays solid in -y' at line 306-311). Intentional, but means the assembled box requires the back panel to be installed for the cable to exit cleanly — worth surfacing in the box-print-guide copy.",
+    "server.py:628 _require_box_geometry() raises 400 (correct per spec). Three lightbox endpoints duplicate the same auth + _ensure_job + _require_box_geometry + _build_export prelude; could be DRY'd into a helper without changing behaviour.",
+    "ConfigPanel.jsx box_shape='round' correctly collapses litho width/height into a single 'Lithophane Ø' slider via isRoundLitho — covered by visual inspection but not a separate data-testid. Adding data-testid='litho-diameter-slider' would simplify future tests.",
+    "StatsPanel.jsx:473 — download-lightbox-diffuser is gated on `boxDiffuser ?? true`. If the parent ever passes the prop as `undefined` (e.g. forgotten in a refactor), the diffuser link would render even when the backend has no diffuser STL → 404 on click. Consider tightening to `boxDiffuser === true` and ensuring App.js always forwards the explicit value."
+  ],
+  "updated_files": ["/app/backend/tests/test_lightbox_api.py"],
+  "success_rate": {"backend": "100% (172/172 — 162 existing + 10 new HTTP tests)", "frontend": "100% — every requested lightbox UI scenario passes"},
+  "test_credentials": "Used the existing conftest.py fixture which seeds test-user-pytest (pro tier, super-admin) + active session token. Frontend scenarios run as anonymous guest because uploads, generation and DOM rendering of the download buttons don't require auth (only clicking the download link itself does — out of scope here).",
+  "seed_data_creation": "No persistent seed. Conftest upserts the pytest user as before. Frontend tests generate a 64x64 PNG via canvas at runtime; no DB writes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_lightbox_api.py is a self-contained HTTP suite hitting REACT_APP_BACKEND_URL — re-runnable as `pytest tests/test_lightbox_api.py -v`. Frontend lightbox UI lives under [data-testid=lightbox-config] in ConfigPanel and the 3 download buttons under [data-testid=download-lightbox-*] in StatsPanel; the lightbox-downloads-header label only renders when geometry='box'. Diffuser button is doubly gated: parent boxDiffuser prop AND backend diffuser STL presence.",
+  "rca of the issue": "N/A — no defects found in this iteration."
+}

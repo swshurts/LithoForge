@@ -109,7 +109,7 @@ class OptimizeIn(BaseModel):
     border_mm: float = 2.0
     layer_height_mm: float = 0.12
     max_swaps: int = 5
-    geometry: Literal["flat", "curved", "cylindrical", "disc"] = "flat"
+    geometry: Literal["flat", "curved", "cylindrical", "disc", "box"] = "flat"
     curve_radius_mm: float = 80.0
     dome_mm: float = 0.0       # disc: gentle dome bump (mm) atop the disc
     filaments: Optional[List[FilamentIn]] = None
@@ -121,6 +121,16 @@ class OptimizeIn(BaseModel):
     printer_id: str = "generic_orca"  # printer profile id from /api/printers
     nozzle_mm: float = 0.4            # nozzle diameter (drives layer bounds + 3MF metadata)
     license: str = ""                 # creator-declared license (free text or preset)
+    # Lightbox (box mode) parameters — ignored when geometry != "box".
+    box_shape: Literal["rect", "round"] = "rect"
+    box_outer_w_mm: float = 110.0
+    box_outer_h_mm: float = 110.0
+    box_depth_mm: float = 35.0
+    box_wall_mm: float = 3.0
+    box_led_mount: Literal["none", "puck", "strip", "both"] = "both"
+    box_puck_diameter_mm: float = 65.0
+    box_diffuser: bool = True
+    box_cable_notch: bool = True
 
 
 class OptimizeOut(BaseModel):
@@ -325,7 +335,12 @@ async def optimize_endpoint(
     # Disc geometry: mask preview/heightmap to a circle so the user sees
     # the actual printed area. The STL exporter handles the geometric
     # masking; this only affects the visual preview images.
-    if body.geometry == "disc":
+    # Box-round: same masking applies (the lithophane inside the round
+    # lightbox is a disc).
+    is_disc_preview = body.geometry == "disc" or (
+        body.geometry == "box" and body.box_shape == "round"
+    )
+    if is_disc_preview:
         import numpy as _np
         h_px, w_px = result.layer_map.shape
         yy, xx = _np.ogrid[:h_px, :w_px]
@@ -344,12 +359,12 @@ async def optimize_endpoint(
 
     # Count zero-thickness pixels inside the print's actual footprint so
     # the UI can surface them as "voids" alongside the Base-fill slider.
-    # For disc geometry, the mask above already zeroed out-of-circle
-    # pixels — re-derive that mask here so we only count voids that the
-    # exporter will actually try to print over.
+    # For disc / box-round geometry, the mask above already zeroed
+    # out-of-circle pixels — re-derive that mask here so we only count
+    # voids that the exporter will actually try to print over.
     import numpy as _np
     lm = result.layer_map
-    if body.geometry == "disc":
+    if is_disc_preview:
         h_px, w_px = lm.shape
         yy, xx = _np.ogrid[:h_px, :w_px]
         cy, cx = (h_px - 1) / 2.0, (w_px - 1) / 2.0
@@ -461,6 +476,15 @@ def _build_export(
         mode=req["geometry"],
         curve_radius_mm=req["curve_radius_mm"],
         dome_mm=float(req.get("dome_mm", 0.0)),
+        box_shape=str(req.get("box_shape", "rect") or "rect"),
+        box_outer_w_mm=float(req.get("box_outer_w_mm", 110.0) or 110.0),
+        box_outer_h_mm=float(req.get("box_outer_h_mm", 110.0) or 110.0),
+        box_depth_mm=float(req.get("box_depth_mm", 35.0) or 35.0),
+        box_wall_mm=float(req.get("box_wall_mm", 3.0) or 3.0),
+        box_led_mount=str(req.get("box_led_mount", "both") or "both"),
+        box_puck_diameter_mm=float(req.get("box_puck_diameter_mm", 65.0) or 65.0),
+        box_diffuser=bool(req.get("box_diffuser", True)),
+        box_cable_notch=bool(req.get("box_cable_notch", True)),
     )
     printer_id = printer_override or req.get("printer_id") or "generic_orca"
     export = build_export(
@@ -596,6 +620,98 @@ async def export_3mf(
         content=export["threemf"],
         media_type="model/3mf",
         headers={"Content-Disposition": f"attachment; filename=lithophane_{job_id}.3mf"},
+    )
+
+
+# --- Lightbox part downloads (box geometry only) ---------------------------
+
+def _require_box_geometry(job: Dict[str, Any], job_id: str) -> None:
+    req = job.get("request") or {}
+    if req.get("geometry") != "box":
+        raise HTTPException(
+            status_code=400,
+            detail="lightbox parts are only available when geometry=box",
+        )
+
+
+@api_router.get("/export/{job_id}/lightbox-frame")
+async def export_lightbox_frame(
+    job_id: str,
+    current_user=Depends(get_current_user_dep),
+    token: Optional[str] = None,
+    printer: Optional[str] = None,
+    base_layers: int = 2,
+) -> Response:
+    if token:
+        await _ensure_job_for_paid_buyer(job_id, token)
+    else:
+        await _gate_creator_download(job_id, "lightbox_frame", current_user)
+    job = JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    _require_box_geometry(job, job_id)
+    export = _build_export(job_id, printer_override=printer, base_min_layers=base_layers)
+    if "lightbox_frame_stl" not in export:
+        raise HTTPException(status_code=500, detail="lightbox frame not built")
+    return Response(
+        content=export["lightbox_frame_stl"],
+        media_type="model/stl",
+        headers={"Content-Disposition": f"attachment; filename=lithophane_{job_id}_lightbox_frame.stl"},
+    )
+
+
+@api_router.get("/export/{job_id}/lightbox-back")
+async def export_lightbox_back(
+    job_id: str,
+    current_user=Depends(get_current_user_dep),
+    token: Optional[str] = None,
+    printer: Optional[str] = None,
+    base_layers: int = 2,
+) -> Response:
+    if token:
+        await _ensure_job_for_paid_buyer(job_id, token)
+    else:
+        await _gate_creator_download(job_id, "lightbox_back", current_user)
+    job = JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    _require_box_geometry(job, job_id)
+    export = _build_export(job_id, printer_override=printer, base_min_layers=base_layers)
+    if "lightbox_back_stl" not in export:
+        raise HTTPException(status_code=500, detail="lightbox back panel not built")
+    return Response(
+        content=export["lightbox_back_stl"],
+        media_type="model/stl",
+        headers={"Content-Disposition": f"attachment; filename=lithophane_{job_id}_lightbox_back.stl"},
+    )
+
+
+@api_router.get("/export/{job_id}/lightbox-diffuser")
+async def export_lightbox_diffuser(
+    job_id: str,
+    current_user=Depends(get_current_user_dep),
+    token: Optional[str] = None,
+    printer: Optional[str] = None,
+    base_layers: int = 2,
+) -> Response:
+    if token:
+        await _ensure_job_for_paid_buyer(job_id, token)
+    else:
+        await _gate_creator_download(job_id, "lightbox_diffuser", current_user)
+    job = JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    _require_box_geometry(job, job_id)
+    export = _build_export(job_id, printer_override=printer, base_min_layers=base_layers)
+    if "lightbox_diffuser_stl" not in export:
+        raise HTTPException(
+            status_code=404,
+            detail="diffuser disabled for this job",
+        )
+    return Response(
+        content=export["lightbox_diffuser_stl"],
+        media_type="model/stl",
+        headers={"Content-Disposition": f"attachment; filename=lithophane_{job_id}_lightbox_diffuser.stl"},
     )
 
 

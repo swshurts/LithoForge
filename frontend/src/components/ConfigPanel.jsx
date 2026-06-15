@@ -56,6 +56,10 @@ export const ConfigPanel = ({
   const update = (key, v) => setConfig((c) => ({ ...c, [key]: v }));
   const isPainting = config.render_mode === "painting";
   const isDisc = config.geometry === "disc";
+  const isBox = config.geometry === "box";
+  // For sizing the lithophane footprint: box-round and disc both
+  // collapse the form to a single Diameter slider.
+  const isRoundLitho = isDisc || (isBox && config.box_shape === "round");
 
   // ---- Nozzle → layer-height constraints --------------------------------
   // Practical window is 25%–80% of nozzle Ø: below 25% extrusion gets
@@ -276,21 +280,231 @@ export const ConfigPanel = ({
                 >
                   Circular disc
                 </SelectItem>
+                <SelectItem
+                  value="box"
+                  className="font-mono text-xs rounded-none"
+                >
+                  Lightbox (rect / round)
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
 
+          {isBox && (
+            <div
+              className="space-y-3 border border-amber-700/30 bg-amber-950/10 p-3"
+              data-testid="lightbox-config"
+            >
+              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-200/80 flex items-center gap-1.5">
+                Lightbox enclosure
+                <HelpHint title="Lightbox" testId="help-lightbox">
+                  <strong className="text-zinc-200">Box mode</strong>
+                  prints the lithophane PLUS a separate enclosure
+                  (frame + slide-in back panel + optional diffuser).
+                  Use a puck-style LED or string LEDs inside.
+                  <br /><br />
+                  Lithophane prints first. Then print the lightbox
+                  frame standing on its FRONT face for the smoothest
+                  bezel. The back panel friction-fits into the cavity.
+                  <br /><br />
+                  Cable-exit notch is a fixed 6 mm gap at the bottom
+                  rear of the back panel.
+                </HelpHint>
+              </div>
+              <div>
+                <Label className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
+                  Box shape
+                </Label>
+                <Select
+                  value={config.box_shape ?? "rect"}
+                  onValueChange={(v) => update("box_shape", v)}
+                  disabled={disabled}
+                >
+                  <SelectTrigger
+                    data-testid="box-shape-select"
+                    className="rounded-none bg-zinc-950 border-zinc-800 font-mono text-xs h-9"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-none bg-zinc-950 border-zinc-800">
+                    <SelectItem value="rect" className="font-mono text-xs rounded-none">
+                      Rectangle
+                    </SelectItem>
+                    <SelectItem value="round" className="font-mono text-xs rounded-none">
+                      Round
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Row
+                label={config.box_shape === "round" ? "Outer Ø" : "Outer width"}
+                value={config.box_outer_w_mm ?? 110}
+                unit="mm"
+                testid="row-box-outer-w"
+              >
+                <Slider
+                  data-testid="box-outer-w-slider"
+                  value={[config.box_outer_w_mm ?? 110]}
+                  onValueChange={([v]) => {
+                    if (config.box_shape === "round") {
+                      setConfig((c) => ({ ...c, box_outer_w_mm: v, box_outer_h_mm: v }));
+                    } else {
+                      update("box_outer_w_mm", v);
+                    }
+                  }}
+                  min={60}
+                  max={320}
+                  step={1}
+                  disabled={disabled}
+                />
+              </Row>
+
+              {config.box_shape !== "round" && (
+                <Row
+                  label="Outer height"
+                  value={config.box_outer_h_mm ?? 110}
+                  unit="mm"
+                  testid="row-box-outer-h"
+                >
+                  <Slider
+                    data-testid="box-outer-h-slider"
+                    value={[config.box_outer_h_mm ?? 110]}
+                    onValueChange={([v]) => update("box_outer_h_mm", v)}
+                    min={60}
+                    max={320}
+                    step={1}
+                    disabled={disabled}
+                  />
+                </Row>
+              )}
+
+              <Row
+                label="Box depth"
+                value={config.box_depth_mm ?? 35}
+                unit="mm"
+                testid="row-box-depth"
+                hint="Depth of the cavity that holds the LED. 25–50 mm is typical for diffuse glow."
+              >
+                <Slider
+                  data-testid="box-depth-slider"
+                  value={[config.box_depth_mm ?? 35]}
+                  onValueChange={([v]) => update("box_depth_mm", v)}
+                  min={20}
+                  max={80}
+                  step={1}
+                  disabled={disabled}
+                />
+              </Row>
+
+              <Row
+                label="Wall thickness"
+                value={(config.box_wall_mm ?? 3).toFixed(1)}
+                unit="mm"
+                testid="row-box-wall"
+              >
+                <Slider
+                  data-testid="box-wall-slider"
+                  value={[config.box_wall_mm ?? 3]}
+                  onValueChange={([v]) => update("box_wall_mm", v)}
+                  min={2}
+                  max={6}
+                  step={0.5}
+                  disabled={disabled}
+                />
+              </Row>
+
+              <div>
+                <Label className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 mb-2 block">
+                  LED mount
+                </Label>
+                <Select
+                  value={config.box_led_mount ?? "both"}
+                  onValueChange={(v) => update("box_led_mount", v)}
+                  disabled={disabled}
+                >
+                  <SelectTrigger
+                    data-testid="box-led-mount-select"
+                    className="rounded-none bg-zinc-950 border-zinc-800 font-mono text-xs h-9"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-none bg-zinc-950 border-zinc-800">
+                    <SelectItem value="puck" className="font-mono text-xs rounded-none">
+                      Puck LED only
+                    </SelectItem>
+                    <SelectItem value="strip" className="font-mono text-xs rounded-none">
+                      Strip / string LED
+                    </SelectItem>
+                    <SelectItem value="both" className="font-mono text-xs rounded-none">
+                      Both (puck + strip)
+                    </SelectItem>
+                    <SelectItem value="none" className="font-mono text-xs rounded-none">
+                      None (empty cavity)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {(config.box_led_mount === "puck" || config.box_led_mount === "both") && (
+                <Row
+                  label="Puck Ø"
+                  value={config.box_puck_diameter_mm ?? 65}
+                  unit="mm"
+                  testid="row-box-puck"
+                  hint="Common LED puck sizes: 50, 65, 80 mm."
+                >
+                  <Slider
+                    data-testid="box-puck-slider"
+                    value={[config.box_puck_diameter_mm ?? 65]}
+                    onValueChange={([v]) => update("box_puck_diameter_mm", v)}
+                    min={30}
+                    max={120}
+                    step={5}
+                    disabled={disabled}
+                  />
+                </Row>
+              )}
+
+              <div className="flex items-center justify-between pt-1">
+                <Label
+                  htmlFor="box-diffuser-toggle"
+                  className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500"
+                >
+                  Frosted diffuser
+                </Label>
+                <button
+                  type="button"
+                  id="box-diffuser-toggle"
+                  data-testid="box-diffuser-toggle"
+                  onClick={() => update("box_diffuser", !(config.box_diffuser ?? true))}
+                  disabled={disabled}
+                  className={`px-3 h-7 border font-mono text-[10px] uppercase tracking-[0.15em] transition-colors ${
+                    (config.box_diffuser ?? true)
+                      ? "border-amber-500/60 bg-amber-500/20 text-amber-100"
+                      : "border-zinc-700 text-zinc-500"
+                  }`}
+                >
+                  {(config.box_diffuser ?? true) ? "On" : "Off"}
+                </button>
+              </div>
+              <div className="font-mono text-[9px] text-zinc-600 leading-tight">
+                Cable-exit notch · always-on · 6 mm at bottom-rear edge of the back panel
+              </div>
+            </div>
+          )}
+
           <Row
-            label={isDisc ? "Diameter" : "Width"}
-            value={isDisc ? Math.min(config.width_mm, config.height_mm) : config.width_mm}
+            label={isRoundLitho ? "Lithophane Ø" : "Width"}
+            value={isRoundLitho ? Math.min(config.width_mm, config.height_mm) : config.width_mm}
             unit="mm"
             testid="row-width"
           >
             <Slider
               data-testid="width-slider"
-              value={[isDisc ? Math.min(config.width_mm, config.height_mm) : config.width_mm]}
+              value={[isRoundLitho ? Math.min(config.width_mm, config.height_mm) : config.width_mm]}
               onValueChange={([v]) => {
-                if (isDisc) {
+                if (isRoundLitho) {
                   setConfig((c) => ({ ...c, width_mm: v, height_mm: v }));
                 } else {
                   update("width_mm", v);
@@ -303,7 +517,7 @@ export const ConfigPanel = ({
             />
           </Row>
 
-          {!isDisc && (
+          {!isRoundLitho && (
             <Row
               label="Height"
               value={config.height_mm}
@@ -380,7 +594,7 @@ export const ConfigPanel = ({
             />
           </Row>
 
-          {config.geometry !== "flat" && config.geometry !== "disc" && (
+          {(config.geometry === "curved" || config.geometry === "cylindrical") && (
             <Row
               label="Curve radius"
               value={config.curve_radius_mm}
@@ -604,7 +818,7 @@ export const ConfigPanel = ({
                 Volume
               </div>
               <div className="font-mono text-lg text-zinc-100 tabular-nums mt-1">
-                {isDisc
+                {isRoundLitho
                   ? (Math.PI * Math.pow(Math.min(config.width_mm, config.height_mm) / 2, 2) * config.thickness_mm / 1000).toFixed(1)
                   : ((config.width_mm * config.height_mm * config.thickness_mm) / 1000).toFixed(1)}
                 <span className="text-zinc-600 text-xs ml-1">cm³</span>

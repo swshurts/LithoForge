@@ -223,6 +223,8 @@ export const StatsPanel = ({
   onPaletteSizeChange,
   onRestoreJob,
   baseMinLayers,
+  geometry,
+  boxDiffuser,
 }) => {
   const q = result ? quality(result.delta_e_mean) : null;
 
@@ -444,6 +446,42 @@ export const StatsPanel = ({
             sub={`Mesh + auto-pause · ${baseMinLayers ?? 2}-layer base fill`}
             testid="download-3mf"
           />
+          {geometry === "box" && (
+            <>
+              <div
+                className="pt-3 mt-2 border-t border-amber-700/30 text-[9px] uppercase tracking-[0.18em] text-amber-200/70 font-mono"
+                data-testid="lightbox-downloads-header"
+              >
+                Lightbox parts · print separately
+              </div>
+              <DownloadButton
+                url={result ? exportUrl(result.job_id, "lightbox-frame", { baseMinLayers }) : null}
+                filename={result ? `lithophane_${result.job_id}_lightbox_frame.stl` : "lightbox_frame.stl"}
+                icon={FileBox}
+                label="Lightbox frame"
+                sub="Print front-face-down · no supports"
+                testid="download-lightbox-frame"
+              />
+              <DownloadButton
+                url={result ? exportUrl(result.job_id, "lightbox-back", { baseMinLayers }) : null}
+                filename={result ? `lithophane_${result.job_id}_lightbox_back.stl` : "lightbox_back.stl"}
+                icon={FileBox}
+                label="Back panel"
+                sub="Slide-in · 6 mm cable notch"
+                testid="download-lightbox-back"
+              />
+              {(boxDiffuser ?? true) && (
+                <DownloadButton
+                  url={result ? exportUrl(result.job_id, "lightbox-diffuser", { baseMinLayers }) : null}
+                  filename={result ? `lithophane_${result.job_id}_lightbox_diffuser.stl` : "lightbox_diffuser.stl"}
+                  icon={FileBox}
+                  label="Diffuser"
+                  sub="Translucent PLA · 0% infill · 4 walls"
+                  testid="download-lightbox-diffuser"
+                />
+              )}
+            </>
+          )}
         </div>
         {!result && (
           <div className="font-mono text-[10px] text-zinc-600 text-center pt-1">

@@ -42,6 +42,16 @@ const DEFAULT_CONFIG = {
   // voids in the heightmap so the 3MF has no holes. Range 1..5; the
   // backend defaults to 2 if the query param is omitted.
   base_min_layers: 2,
+  // Lightbox (box geometry) defaults. Ignored unless geometry === "box".
+  box_shape: "rect",
+  box_outer_w_mm: 110,
+  box_outer_h_mm: 110,
+  box_depth_mm: 35,
+  box_wall_mm: 3,
+  box_led_mount: "both",
+  box_puck_diameter_mm: 65,
+  box_diffuser: true,
+  box_cable_notch: true,
 };
 
 export default function App() {
@@ -461,6 +471,8 @@ export default function App() {
       onPaletteSizeChange={handlePaletteSizeChange}
       onRestoreJob={handleRestoreJob}
       baseMinLayers={config.base_min_layers}
+      geometry={config.geometry}
+      boxDiffuser={config.box_diffuser ?? true}
     />
   );
 

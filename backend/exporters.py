@@ -31,9 +31,28 @@ class GeometrySpec:
     width_mm: float
     height_mm: float
     border_mm: float = 0.0
-    mode: str = "flat"          # "flat" | "curved" | "cylindrical" | "disc"
+    mode: str = "flat"          # "flat" | "curved" | "cylindrical" | "disc" | "box"
     curve_radius_mm: float = 80  # used when mode == curved/cylindrical
     dome_mm: float = 0.0         # used when mode == disc (gentle dome height)
+    # Box (lightbox) parameters — only consulted when mode == "box".
+    box_shape: str = "rect"     # "rect" | "round"
+    box_outer_w_mm: float = 110.0
+    box_outer_h_mm: float = 110.0
+    box_depth_mm: float = 35.0
+    box_wall_mm: float = 3.0
+    box_led_mount: str = "both"  # "none" | "puck" | "strip" | "both"
+    box_puck_diameter_mm: float = 65.0
+    box_diffuser: bool = True
+    box_cable_notch: bool = True
+
+    def litho_mode(self) -> str:
+        """Mode used internally when meshing the LITHOPHANE itself.
+        For `box`, the lithophane prints as a plain flat slab (rect)
+        or disc (round) — the surrounding enclosure is a separate
+        mesh emitted from `lightbox.py`."""
+        if self.mode == "box":
+            return "disc" if self.box_shape == "round" else "flat"
+        return self.mode
 
 
 # ---------------------------------------------------------------------------
@@ -1089,7 +1108,25 @@ def build_export(
     # Clamp to the UI's exposed range so a stray API caller can't blow
     # up the heightmap or starve the print of base filament.
     base_min_layers = max(1, min(5, int(base_min_layers)))
-    vertices, faces = _build_mesh(layer_map, layer_height_mm, geo, base_min_layers)
+
+    # Lightbox mode: resolve to flat/disc for the lithophane mesh, then
+    # build the enclosure separately. The lithophane is always sized to
+    # the LITHOPHANE footprint (geo.width_mm × geo.height_mm), which is
+    # what the user dialled in. The lightbox uses geo.box_outer_* dims.
+    is_box = (geo.mode == "box")
+    if is_box:
+        litho_geo = GeometrySpec(
+            width_mm=geo.width_mm,
+            height_mm=geo.height_mm,
+            border_mm=geo.border_mm,
+            mode=("disc" if geo.box_shape == "round" else "flat"),
+            curve_radius_mm=geo.curve_radius_mm,
+            dome_mm=0.0,
+        )
+    else:
+        litho_geo = geo
+
+    vertices, faces = _build_mesh(layer_map, layer_height_mm, litho_geo, base_min_layers)
     stl_bytes = write_stl_binary(vertices, faces)
     swap_txt = build_swap_instructions(
         swap_heights_mm, swap_colors, filament_names, layer_height_mm, profile,
@@ -1108,7 +1145,7 @@ def build_export(
         swap_layer_indices,
         len(filaments),
         layer_height_mm,
-        geo,
+        litho_geo,
         base_min_layers=base_min_layers,
     )
     threemf = write_3mf(
@@ -1117,7 +1154,7 @@ def build_export(
         per_filament_slabs=per_filament_slabs,
         nozzle_mm=nozzle_mm,
     )
-    return {
+    result = {
         "stl": stl_bytes,
         "swap_txt": swap_txt.encode("utf-8"),
         "threemf": threemf,
@@ -1128,3 +1165,34 @@ def build_export(
         "base_min_layers": base_min_layers,
         "nozzle_mm": nozzle_mm,
     }
+
+    # Lightbox enclosure (separate prints) — only when mode == "box".
+    if is_box:
+        from lightbox import LightboxSpec, build_lightbox_export
+        # Litho width/height in the box context is the OUTER lithophane
+        # footprint (it sits inside the enclosure's pocket).
+        spec = LightboxSpec(
+            shape=geo.box_shape,
+            width_mm=geo.box_outer_w_mm,
+            height_mm=geo.box_outer_h_mm if geo.box_shape == "rect" else geo.box_outer_w_mm,
+            depth_mm=geo.box_depth_mm,
+            wall_mm=geo.box_wall_mm,
+            litho_w_mm=geo.width_mm,
+            litho_h_mm=geo.height_mm if geo.box_shape == "rect" else geo.width_mm,
+            litho_thickness_mm=max(1.5, float(layer_height_mm) * float(int(np.max(layer_map)) + max(1, base_min_layers))),
+            led_mount=geo.box_led_mount,
+            puck_diameter_mm=geo.box_puck_diameter_mm,
+            diffuser=geo.box_diffuser,
+            cable_notch=geo.box_cable_notch,
+        )
+        lb = build_lightbox_export(spec)
+        result["lightbox_frame_stl"] = lb["frame_stl"]
+        result["lightbox_back_stl"] = lb["back_stl"]
+        if "diffuser_stl" in lb:
+            result["lightbox_diffuser_stl"] = lb["diffuser_stl"]
+        result["lightbox_triangles"] = {
+            "frame": lb["frame_triangles"],
+            "back": lb["back_triangles"],
+            "diffuser": lb.get("diffuser_triangles", 0),
+        }
+    return result
