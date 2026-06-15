@@ -151,6 +151,10 @@ class OptimizeOut(BaseModel):
     # lets the UI surface a "Voids: N pixels · filled by base" badge.
     void_pixels: int = 0
     in_domain_pixels: int = 0
+    # Heuristic print-time + filament-cost estimate. Slicer is still
+    # the ground truth — this just gives the user a number BEFORE
+    # they open their slicer. See `cost_estimator.py` for the model.
+    cost_estimate: Optional[Dict[str, Any]] = None
 
 
 class StatusCheck(BaseModel):
@@ -387,6 +391,28 @@ async def optimize_endpoint(
         })
         z += n * result.layer_height_mm
 
+    # Heuristic print-time + filament-cost estimate. Computed from the
+    # solved layer_map + filament list + geometry; surface-only — the
+    # slicer remains the source of truth for actual print numbers.
+    from cost_estimator import estimate_print_costs
+    swap_layer_indices_for_cost = [
+        max(1, int(round(z_mm / result.layer_height_mm)))
+        for z_mm in result.swap_heights_mm[1:]
+    ]
+    usable_w = max(1.0, body.width_mm - 2 * body.border_mm)
+    usable_h = max(1.0, body.height_mm - 2 * body.border_mm)
+    cost_shape = "disc" if is_disc_preview else "flat"
+    cost = estimate_print_costs(
+        layer_map=result.layer_map,
+        layer_height_mm=result.layer_height_mm,
+        swap_layer_indices=swap_layer_indices_for_cost,
+        filaments=result.filaments,
+        usable_width_mm=usable_w,
+        usable_height_mm=usable_h,
+        base_min_layers=2,
+        shape=cost_shape,
+    )
+
     job_id = str(uuid.uuid4())
     JOBS[job_id] = {
         "image_id": body.image_id,
@@ -442,6 +468,7 @@ async def optimize_endpoint(
         timeline=timeline,
         void_pixels=void_pixels,
         in_domain_pixels=in_domain_pixels,
+        cost_estimate=cost.to_dict(),
     )
 
 

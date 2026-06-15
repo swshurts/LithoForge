@@ -1,0 +1,34 @@
+{
+  "summary": "Iter-109 full validation of (A) cost_estimate field on /api/optimize + Print-Estimate StatsPanel UI, and (B) Voice prompt history (localStorage-backed, last-10). ALL scenarios pass. Backend: full 176-test pytest suite still green; added 2 new HTTP integration tests in tests/test_cost_estimate_api.py (both pass). Frontend: cost-estimate-panel renders all 3 KPI cards (cost-time 14m, cost-weight 10.8g, cost-usd $0.27), Heuristic tag, slicer disclaimer line, and 6 per-filament rows (cost-row-0..5) for a 6-filament 100x100x2.2mm flat lithophane. Voice-history pill button renders count badge, popover lists 3 items, click on item-1 dispatches CustomEvent('voice-prompt') with the right detail.prompt, dedup keeps list capped at 3 entries (moves replayed prompt to position 0), clear button wipes both localStorage and the DOM button, and the pill is correctly hidden when phase !== 'idle' (mic modal open).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_scenarios": [
+    "BACKEND pytest: 176/176 green (5.84s for the cost-related subset, 24.01s for full suite). New tests/test_cost_estimator.py (4 unit tests) passes.",
+    "BACKEND new HTTP suite test_cost_estimate_api.py (2/2): POST /api/upload then /api/optimize returns cost_estimate with total_time_minutes>0, total_weight_g in [5,80]g range, total_cost_usd in [$0.05,$10] range, all 8 required fields present in each per_filament entry; disc/flat volume ratio falls in [0.6, 0.95] (verified ~π/4 footprint reduction).",
+    "FRONTEND cost-estimate-panel: visible after Generate (96x96 RGB seed, 6 filaments, 2.2mm thickness). cost-time='14m', cost-weight='10.8g', cost-usd='$0.27'; cost-per-filament container present; 6 cost-row-{i} entries one per filament; 'Heuristic' tag present; disclaimer 'Assumes Ø1.75mm filament · PLA $25/kg · 12mm/s extruder throughput · 90s per colour swap. Real prints vary ±20%.' rendered.",
+    "FRONTEND voice-history (all 5 sub-flows pass): (a) seeded localStorage ['prompt-a','b','c'] → voice-history-btn visible with badge '3'; (b) clicking opens voice-history-popover, item-0/1/2 contain prompt-a/b/c respectively; (c) click on voice-history-item-1 dispatches CustomEvent('voice-prompt', {detail:{prompt:'prompt-b'}}) captured via window listener; (d) after replay, localStorage list still length 3 with 'prompt-b' moved to index 0 (dedup verified); (e) voice-history-clear wipes localStorage to [] and removes voice-history-btn from DOM (count=0).",
+    "FRONTEND phase gating: with re-seeded history, opening the mic modal (data-testid='voice-modal' visible) causes voice-history-btn count → 0, confirming the `phase==='idle'` guard."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_cost_estimator.py (existing 4 unit tests, all pass)",
+    "/app/backend/tests/test_cost_estimate_api.py (NEW — 2 HTTP integration tests, both pass)",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "cost_estimator.py:181 — `source = floored_lm if k == 0 else layer_map.astype(np.float64)` only the slot-0 (base) slab benefits from the base_min_layers floor. For a job where the user pushes base_min_layers > 0 and the layer-map has many zero-pixels, slots 1+ silently skip those pixels. Intentional (only base fills voids) but worth a code comment for the next maintainer.",
+    "cost_estimator.py:160-169 — when len(swap_layer_indices) > len(filaments), the slice silently truncates. If a future caller miscounts swaps vs slots, the cost report would drop the trailing slot without warning. Consider asserting `len(bottoms)==len(filaments)` after the loop or logging a warning.",
+    "VoiceCommand.jsx:395 — `history.length > 0 && phase === 'idle'` reads the latest history every render; but if storage is mutated by another tab there's no 'storage' event listener to re-load. Minor edge case (multi-tab usage) — adding `window.addEventListener('storage', ...)` would make cross-tab history sync work.",
+    "VoiceCommand.jsx:166 — `replayHistory` calls pushHistory which is correct, but does not increment any analytics. If you want telemetry on which prompts users re-run, add a tracker call.",
+    "StatsPanel.jsx:402 — `result?.cost_estimate` gate is correct; however the per_filament list is rendered un-virtualised. With 10+ filaments it's still fine (PaletteEditor caps at 8). No action required.",
+    "test_cost_estimator.py:73 (test_to_dict_serialises) — only the first per_filament[0] is asserted; consider iterating to catch a regression where any slot serialises a None/NaN. Low priority."
+  ],
+  "updated_files": ["/app/backend/tests/test_cost_estimate_api.py"],
+  "success_rate": {"backend": "100% (176 unit/integration + 2 new HTTP tests)", "frontend": "100% — every iter-109 UI requirement verified"},
+  "test_credentials": "Not used. All iter-109 scenarios run as anonymous guest — /api/upload, /api/optimize and the StatsPanel + VoiceCommand UI do not require auth.",
+  "seed_data_creation": "No persistent seed. Test image generated at runtime (96x96 RGB gradient → /tmp/TEST_cost.png). localStorage seeded per-test then cleared.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_cost_estimate_api.py is a self-contained HTTP suite hitting REACT_APP_BACKEND_URL via /api/upload → /api/optimize. Cost-estimate-panel renders only when result.cost_estimate is present (post-Generate). Voice history pill is doubly-gated on `phase==='idle' && history.length > 0`; seed localStorage key 'lithoforge:voice-prompt-history' BEFORE component mount or do `await page.reload()` after seeding.",
+  "rca of the issue": "N/A — no defects found."
+}

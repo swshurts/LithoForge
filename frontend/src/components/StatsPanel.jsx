@@ -399,6 +399,93 @@ export const StatsPanel = ({
         )}
       </div>
 
+      {result?.cost_estimate && (
+        <>
+          <div className="border-t border-zinc-800" />
+          <div className="space-y-3" data-testid="cost-estimate-panel">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
+                Print estimate
+              </span>
+              <span
+                className="font-mono text-[9px] text-zinc-600 uppercase tracking-[0.15em]"
+                title="Heuristic — slicer is the source of truth"
+              >
+                Heuristic
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="panel-muted p-2.5">
+                <div className="text-[9px] uppercase tracking-[0.15em] text-zinc-500">
+                  Print time
+                </div>
+                <div
+                  className="font-mono text-sm text-zinc-100 tabular-nums mt-0.5"
+                  data-testid="cost-time"
+                >
+                  {(() => {
+                    const m = Math.round(result.cost_estimate.total_time_minutes);
+                    const hh = Math.floor(m / 60);
+                    const mm = m % 60;
+                    return hh > 0 ? `${hh}h ${mm}m` : `${mm}m`;
+                  })()}
+                </div>
+              </div>
+              <div className="panel-muted p-2.5">
+                <div className="text-[9px] uppercase tracking-[0.15em] text-zinc-500">
+                  Filament
+                </div>
+                <div
+                  className="font-mono text-sm text-zinc-100 tabular-nums mt-0.5"
+                  data-testid="cost-weight"
+                >
+                  {result.cost_estimate.total_weight_g.toFixed(1)}
+                  <span className="text-zinc-600 text-xs ml-1">g</span>
+                </div>
+              </div>
+              <div className="panel-muted p-2.5">
+                <div className="text-[9px] uppercase tracking-[0.15em] text-zinc-500">
+                  Cost
+                </div>
+                <div
+                  className="font-mono text-sm text-amber-200 tabular-nums mt-0.5"
+                  data-testid="cost-usd"
+                >
+                  ${result.cost_estimate.total_cost_usd.toFixed(2)}
+                </div>
+              </div>
+            </div>
+            <div className="space-y-1" data-testid="cost-per-filament">
+              {result.cost_estimate.per_filament.map((f, i) => (
+                <div
+                  key={`${f.name}-${i}`}
+                  className="flex items-center gap-2 font-mono text-[10px]"
+                  data-testid={`cost-row-${i}`}
+                >
+                  <div
+                    className="w-2.5 h-2.5 border border-zinc-700"
+                    style={{ background: f.hex }}
+                  />
+                  <span className="text-zinc-400 flex-1 truncate">{f.name}</span>
+                  <span className="text-zinc-500 tabular-nums w-12 text-right">
+                    {f.weight_g.toFixed(1)}g
+                  </span>
+                  <span className="text-zinc-500 tabular-nums w-12 text-right">
+                    {(f.length_mm / 1000).toFixed(2)}m
+                  </span>
+                  <span className="text-amber-300/80 tabular-nums w-12 text-right">
+                    ${f.cost_usd.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="font-mono text-[9px] text-zinc-600 leading-tight">
+              Assumes Ø1.75mm filament · PLA $25/kg · 12mm/s extruder throughput · 90s per colour swap. Real prints vary ±20%.
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="border-t border-zinc-800" />
 
       <div className="space-y-3">

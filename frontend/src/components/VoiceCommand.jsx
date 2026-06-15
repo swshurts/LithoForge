@@ -19,7 +19,7 @@
  *  A server-side Whisper fallback is wired but stubbed at this phase.
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, MicOff, Play, X, Loader2, Pause, Keyboard } from "lucide-react";
+import { Mic, MicOff, Play, X, Loader2, Pause, Keyboard, History, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const SILENCE_MS_DEFAULT = 5000;
@@ -30,6 +30,40 @@ const PAUSE_WORDS = ["pause", "wait", "hold on", "hold-on"];
 const RESUME_WORDS = ["go", "proceed", "continue"];
 const RUN_WORDS = ["run", "go"];
 const CANCEL_WORDS = ["cancel", "quit"];
+
+// Voice prompt history (localStorage-backed). Caps at 10 most-recent,
+// de-duplicates on push so re-running an old favorite doesn't bloat
+// the list.
+const HISTORY_KEY = "lithoforge:voice-prompt-history";
+const HISTORY_MAX = 10;
+
+const loadHistory = () => {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.slice(0, HISTORY_MAX) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveHistory = (items) => {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0, HISTORY_MAX)));
+  } catch {
+    /* quota / disabled storage — silently skip */
+  }
+};
+
+const pushHistory = (prompt) => {
+  const next = [
+    prompt,
+    ...loadHistory().filter((p) => p !== prompt),
+  ].slice(0, HISTORY_MAX);
+  saveHistory(next);
+  return next;
+};
 
 const SR =
   typeof window !== "undefined"
@@ -47,6 +81,8 @@ export default function VoiceCommand() {
   const [transcript, setTranscript] = useState("");
   const [interim, setInterim] = useState("");
   const [continuous, setContinuous] = useState(false);
+  const [history, setHistory] = useState(() => loadHistory());
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const recognitionRef = useRef(null);
   const phaseRef = useRef("idle");
@@ -108,6 +144,7 @@ export default function VoiceCommand() {
       window.dispatchEvent(
         new CustomEvent("voice-prompt", { detail: { prompt: finalPrompt } }),
       );
+      setHistory(pushHistory(finalPrompt));
       toast.success("Voice prompt sent", { description: finalPrompt });
       if (continuous) {
         setTranscript("");
@@ -121,6 +158,22 @@ export default function VoiceCommand() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [transcript, continuous, close],
   );
+
+  const replayHistory = useCallback((prompt) => {
+    window.dispatchEvent(
+      new CustomEvent("voice-prompt", { detail: { prompt } }),
+    );
+    setHistory(pushHistory(prompt));
+    setHistoryOpen(false);
+    toast.success("Re-running prompt", { description: prompt });
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    saveHistory([]);
+    setHistory([]);
+    setHistoryOpen(false);
+    toast("Voice prompt history cleared");
+  }, []);
 
   const startRecognition = useCallback(() => {
     if (!IS_SUPPORTED) {
@@ -338,6 +391,62 @@ export default function VoiceCommand() {
       >
         {IS_SUPPORTED ? <Mic size={18} /> : <MicOff size={18} />}
       </button>
+
+      {history.length > 0 && phase === "idle" && (
+        <button
+          onClick={() => setHistoryOpen((v) => !v)}
+          title={`Voice history · ${history.length} prompt${history.length === 1 ? "" : "s"}`}
+          data-testid="voice-history-btn"
+          className="fixed bottom-20 right-20 z-40 h-12 px-3 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-200 hover:bg-zinc-800 shadow-lg flex items-center gap-1.5 transition-colors font-mono text-[10px] uppercase tracking-[0.15em]"
+        >
+          <History size={14} />
+          {history.length}
+        </button>
+      )}
+
+      {historyOpen && history.length > 0 && (
+        <div
+          className="fixed bottom-36 right-5 z-40 w-80 max-h-[60vh] bg-zinc-900 border border-zinc-700 shadow-2xl overflow-hidden flex flex-col"
+          data-testid="voice-history-popover"
+        >
+          <div className="px-4 py-2.5 border-b border-zinc-800 flex items-center justify-between">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-300">
+              Voice history · last {history.length}
+            </div>
+            <button
+              onClick={clearHistory}
+              title="Clear all"
+              data-testid="voice-history-clear"
+              className="text-zinc-500 hover:text-red-300"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+          <div className="overflow-y-auto divide-y divide-zinc-800">
+            {history.map((p, i) => (
+              <button
+                key={`${p}-${i}`}
+                onClick={() => replayHistory(p)}
+                data-testid={`voice-history-item-${i}`}
+                className="w-full text-left px-4 py-3 hover:bg-zinc-800 group flex items-start gap-2"
+                title={p}
+              >
+                <Play size={12} className="text-emerald-400 mt-0.5 opacity-60 group-hover:opacity-100 flex-shrink-0" />
+                <span className="font-mono text-xs text-zinc-200 line-clamp-3 leading-snug">
+                  {p}
+                </span>
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setHistoryOpen(false)}
+            data-testid="voice-history-close"
+            className="px-4 py-2 border-t border-zinc-800 font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+          >
+            Close
+          </button>
+        </div>
+      )}
 
       {phase !== "idle" && (
         <div
