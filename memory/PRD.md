@@ -1230,3 +1230,16 @@ Auto-generated code review (env `9903f5df`) flagged 100+ items. After auditing e
   - localStorage-backed (key `lithoforge:voice-prompt-history`), deduped, capped at 10, most-recent-first
   - `runCommand` and `replayHistory` both push to history; popover offers one-click re-dispatch of `voice-prompt` window event
   - New UI: pill button next to mic FAB (only shown when phase=idle && history.length>0) opens a popover with each prompt + clear-all trash button (data-testids: `voice-history-btn`, `voice-history-popover`, `voice-history-item-{i}`, `voice-history-clear`)
+
+## Implemented (2026-02-15 · iter-110)
+- [x] **Filament swap simulator** on the cost panel
+  - New `/app/frontend/src/components/CostSwapSimulator.jsx`: per-row swap button opens a popover with the 6 closest library alternatives (queried via existing `/api/filament-library/search`).
+  - Each alternative shows brand · name · ΔE · $/kg · recomputed cost + signed cost-delta (cheaper = emerald, pricier = rose).
+  - Picking applies a per-slot override and renders a "With swaps" footer with new total + dollar/% delta badge (data-testids: `cost-swap-simulator`, `cost-swap-btn-{n}`, `cost-swap-popover-{n}`, `cost-swap-alt-{n}-{i}`, `cost-swap-summary`, `cost-swap-total`, `cost-swap-delta`, `cost-swap-reset-{n}`).
+  - Backend: `cost_estimator.price_per_kg_usd(material, brand, finish)` with brand-tier multipliers (Prusament 1.45×, Bambu 1.0×, Generic 0.85×) and finish bumps (silk 1.20×, transparent 1.10×). `CatalogFilament.as_dict()` now includes `price_per_kg_usd` so the search endpoint returns it inline. `estimate_print_costs` honours explicit per-filament `price_per_kg_usd` overrides.
+- [x] **Refactor: Dead Stripe code removed**
+  - Deleted `/app/backend/marketplace_checkout.py`, `/app/backend/payouts.py`, `/app/backend/tests/test_marketplace_checkout.py`.
+  - Moved `resolve_download_token` into `marketplace_braintree.py` (it's payment-provider-agnostic).
+  - Updated `server.py` imports + dropped the obsolete `checkout_router` mount.
+  - `STRIPE_API_KEY` env var left in `.env` (per environment rules — never delete existing keys).
+- 182/182 backend pytests passing (174 existing + 8 new iter-110 swap-simulator integration tests).
