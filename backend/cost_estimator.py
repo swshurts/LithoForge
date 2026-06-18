@@ -56,6 +56,43 @@ PER_LAYER_OVERHEAD_SEC = 3.0    # travel / Z-hop / cooling per layer
 SWAP_OVERHEAD_SEC = 90.0        # per colour-swap (M600 pause cost)
 
 
+# Per-brand price tier multipliers vs. the material baseline. Built from
+# late-2025 retail pricing surveys across MatterHackers / Amazon / vendor
+# direct stores. "Premium" brands command ≈40% over the median, budget
+# generics drop ≈15% under. Finish bumps (silk / matte / transparent) sit
+# on top because they're harder to manufacture.
+_BRAND_TIER_MULTIPLIER = {
+    # premium
+    "prusament": 1.45, "polymaker": 1.40, "polyterra": 1.20,
+    "fillamentum": 1.45, "atomic": 1.45, "atomic filament": 1.45,
+    "proto-pasta": 1.55, "proto pasta": 1.55,
+    # standard
+    "bambu lab": 1.00, "bambu": 1.00, "esun": 0.95, "esun pla": 0.95,
+    "sunlu": 0.90, "creality": 0.95, "anycubic": 0.95, "matterhackers": 1.10,
+    "geeetech": 0.90, "polyterra pla": 1.20,
+    # budget
+    "generic": 0.85, "amazonbasics": 0.80, "elegoo": 0.85, "overture": 0.90,
+}
+
+_FINISH_MULTIPLIER = {
+    "gloss": 1.00,
+    "matte": 1.00,
+    "silk": 1.20,
+    "transparent": 1.10,
+}
+
+
+def price_per_kg_usd(material: str = "PLA", brand: str = "", finish: str = "gloss") -> float:
+    """Estimated retail price per kilogram (USD) for a filament SKU.
+    Used by /api/filament-library/search results and by the cost
+    estimator's per-filament breakdown."""
+    base = DEFAULT_PRICE_USD_PER_KG.get(_filament_material_key(material),
+                                        DEFAULT_PRICE_USD_PER_KG["PLA"])
+    brand_mult = _BRAND_TIER_MULTIPLIER.get((brand or "").lower().strip(), 1.0)
+    finish_mult = _FINISH_MULTIPLIER.get((finish or "gloss").lower().strip(), 1.0)
+    return round(base * brand_mult * finish_mult, 2)
+
+
 @dataclass
 class FilamentCost:
     slot: int
@@ -186,8 +223,17 @@ def estimate_print_costs(
         volume_mm3 = float(clipped.sum()) * layer_height_mm * cell_area_mm2
 
         mat = _filament_material_key(getattr(fil, "name", ""))
+        # Prefer an explicit price_per_kg_usd attached to the filament
+        # (set by the swap simulator); otherwise fall back to brand-tier
+        # pricing if a brand is available, else the material baseline.
+        brand = getattr(fil, "brand", "") or ""
+        finish = getattr(fil, "finish", "gloss") or "gloss"
+        explicit_price = getattr(fil, "price_per_kg_usd", None)
+        if explicit_price is not None:
+            price_per_kg = float(explicit_price)
+        else:
+            price_per_kg = price_per_kg_usd(mat, brand, finish)
         density = DENSITY_G_PER_MM3.get(mat, DENSITY_G_PER_MM3["PLA"])
-        price_per_kg = DEFAULT_PRICE_USD_PER_KG.get(mat, DEFAULT_PRICE_USD_PER_KG["PLA"])
 
         weight_g = volume_mm3 * density
         length_mm = volume_mm3 / cross_section_mm2 if cross_section_mm2 > 0 else 0.0

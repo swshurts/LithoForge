@@ -4,6 +4,7 @@ import { PaletteEditor } from "./PaletteEditor";
 import { JobHistory } from "./JobHistory";
 import { HelpHint } from "./HelpHint";
 import { LibraryMatchPanel } from "./LibraryMatchPanel";
+import { CostSwapSimulator } from "./CostSwapSimulator";
 import { exportUrl } from "../lib/api";
 import { useQuota } from "../lib/quota";
 
@@ -455,32 +456,9 @@ export const StatsPanel = ({
                 </div>
               </div>
             </div>
-            <div className="space-y-1" data-testid="cost-per-filament">
-              {result.cost_estimate.per_filament.map((f, i) => (
-                <div
-                  key={`${f.name}-${i}`}
-                  className="flex items-center gap-2 font-mono text-[10px]"
-                  data-testid={`cost-row-${i}`}
-                >
-                  <div
-                    className="w-2.5 h-2.5 border border-zinc-700"
-                    style={{ background: f.hex }}
-                  />
-                  <span className="text-zinc-400 flex-1 truncate">{f.name}</span>
-                  <span className="text-zinc-500 tabular-nums w-12 text-right">
-                    {f.weight_g.toFixed(1)}g
-                  </span>
-                  <span className="text-zinc-500 tabular-nums w-12 text-right">
-                    {(f.length_mm / 1000).toFixed(2)}m
-                  </span>
-                  <span className="text-amber-300/80 tabular-nums w-12 text-right">
-                    ${f.cost_usd.toFixed(2)}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <CostSwapSimulator costEstimate={result.cost_estimate} />
             <div className="font-mono text-[9px] text-zinc-600 leading-tight">
-              Assumes Ø1.75mm filament · PLA $25/kg · 12mm/s extruder throughput · 90s per colour swap. Real prints vary ±20%.
+              Click the ⇄ icon to swap any filament against your library and see live cost changes. Assumes Ø1.75mm filament · 12mm/s extruder throughput · 90s per colour swap. Real prints vary ±20%.
             </div>
           </div>
         </>

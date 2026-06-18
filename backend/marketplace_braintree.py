@@ -23,7 +23,7 @@ from __future__ import annotations
 import os
 import secrets
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import braintree
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -32,10 +32,30 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, EmailStr, Field
 
 from email_service import send_purchase_email
-from payouts import settle_creator_payout as _legacy_stripe_settle  # noqa: F401  (kept for rollback)
 from paypal_payouts import settle_creator_payout
 
 PLATFORM_FEE_PCT = 6.0
+
+
+async def resolve_download_token(
+    db: AsyncIOMotorDatabase, job_id: str, token: str
+) -> Optional[Dict[str, Any]]:
+    """Verify a download token grants access to job_id. Returns the
+    transaction document or None.
+
+    Used by /api/export/{job_id}/* to gate buyer downloads — works for
+    any payment provider that writes a `payment_transactions` row with
+    payment_status='paid' and a `download_token` field.
+    """
+    txn = await db.payment_transactions.find_one(
+        {
+            "job_id": job_id,
+            "download_token": token,
+            "payment_status": "paid",
+        },
+        {"_id": 0},
+    )
+    return txn
 
 
 def get_braintree_gateway() -> braintree.BraintreeGateway:

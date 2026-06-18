@@ -1,0 +1,44 @@
+{
+  "summary": "Iter-110 full validation of (A) Filament Swap Simulator (cost panel) and (B) Stripe → Braintree refactor. ALL scenarios pass. Backend pytest: 182/182 green (174 existing + 8 new iter-110 tests in test_iter110_swap_simulator.py). Frontend Playwright: CostSwapSimulator renders with 6 cost-row + 6 swap-btn entries; popover loads 6 alternatives with brand · name · ΔE · $/kg · recomputed cost + signed delta; picking an alt closes the popover, shows the reset X button, renders cost-swap-summary footer with cost-swap-total + cost-swap-delta badge; cheaper alt → emerald color class confirmed; reset removes override and hides summary; row cost restores to original.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_scenarios": [
+    "BACKEND /api/filament-library/search?hex=ff0000&limit=4 — every result carries price_per_kg_usd (float > 0).",
+    "BACKEND brand-tier pricing: Prusament ($40.60/kg avg) > Bambu Lab ($25/kg) > generic/eSun/Atomic (≤ $25/kg) for PLA, same hex search.",
+    "BACKEND material pricing: Bambu PETG (~$32/kg avg) > Bambu PLA (~$25/kg).",
+    "BACKEND cost_estimator.estimate_print_costs honours explicit `price_per_kg_usd` on filament objects — same 3×4 layer-map with $80/kg filaments vs $10/kg filaments yields ~8× total_cost_usd ratio (test asserts 7.0 < ratio < 9.0; observed 8.00).",
+    "BACKEND REFACTOR /api/marketplace/{job}/checkout — Stripe checkout route returns 404 (route deleted), as expected.",
+    "BACKEND REFACTOR /api/marketplace/client-token (Braintree) — still returns a valid client_token string (200 OK).",
+    "BACKEND REFACTOR /api/export/{job}/stl with no token & no auth → 401 auth_required (creator-flow gate intact); with bogus token + non-existent job → 404 'job not found' (NOT 500), proving resolve_download_token import from marketplace_braintree.py works.",
+    "BACKEND deleted files confirmed: /app/backend/marketplace_checkout.py, /app/backend/payouts.py, /app/backend/tests/test_marketplace_checkout.py all gone.",
+    "BACKEND full pytest suite: 182/182 PASSED in 26.20s (174 existing + 8 new iter-110 tests). No regressions.",
+    "FRONTEND CostSwapSimulator (data-testid='cost-swap-simulator') renders inside cost-estimate-panel after Generate (96×96 RGB gradient → 6-filament default palette).",
+    "FRONTEND 6 cost-row-{i} (0..5) each accompanied by cost-swap-btn-{i} (6 = 6). Initial cost row 0 shows '$0.09'.",
+    "FRONTEND clicking cost-swap-btn-0 opens cost-swap-popover-0; alternatives loaded — observed 6 alt buttons (cost-swap-alt-0-0..5) with brand · name · ΔE · $/kg · recomputed cost + signed delta (− emerald / + rose). Example alt-0-0 'Polymaker · PolyLite PLA Red · ΔE 3.1 · $35.00/kg $0.12 +$0.03'.",
+    "FRONTEND picking cost-swap-alt-0-5 (Eryone $25.00/kg) closes the popover; cost-swap-reset-0 appears; cost-swap-summary renders with cost-swap-total='$0.29' and cost-swap-delta='−$0.00 · -2%' (emerald class confirmed for negative delta).",
+    "FRONTEND clicking cost-swap-reset-0 removes the override, hides cost-swap-summary, and restores cost-row-cost-0 to '$0.09' (==pre-swap original)."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter110_swap_simulator.py (NEW — 8 tests, all pass)",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/iter110_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "CostSwapSimulator.jsx:48-50 — material is hard-coded to 'PLA' on the search call. If the user's source filament was PETG/ABS, alternatives shown will be PLA only; deltas are still mathematically correct but the swap is conceptually cross-material. Already flagged as intentional v1 limitation by main agent; consider passing the row's source material in a future iteration.",
+    "CostSwapSimulator.jsx:25 DEFAULT_PRICE_FALLBACK=25.0 — if the search API ever returns an entry without price_per_kg_usd (shouldn't with iter-110, but for safety), the simulator silently uses $25/kg and reports a $0 delta. Worth logging a warning or surfacing 'price unknown' in the UI.",
+    "CostSwapSimulator.jsx:99-104 — totals are recomputed every render over per_filament; fine at N=6 but a useMemo keyed on `overrides` would avoid the loop when the user is hovering swap buttons.",
+    "cost_estimator.py:226-235 — getattr-based explicit-price hook only honours object attribute access; if a downstream caller ever passes filaments as dicts (as my first test attempt did), the explicit price is silently ignored and the cost falls back to the material/brand default. Consider also checking `dict.get('price_per_kg_usd')`.",
+    "marketplace_braintree.py:resolve_download_token relocation — function works, import-from-server.py succeeds. No legacy `_legacy_stripe_settle` import remains. Clean."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter110_swap_simulator.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (182/182 pytest, including 8 new iter-110 tests)", "frontend": "100% — every iter-110 UI requirement verified"},
+  "test_credentials": "Not used. All iter-110 scenarios run as anonymous guest — /api/upload, /api/optimize, /api/filament-library/search, /api/marketplace/client-token and the CostSwapSimulator UI do not require auth. Buyer-download 401-gate verified without credentials.",
+  "seed_data_creation": "No persistent seed. 96×96 RGB gradient PNG generated at runtime in the Playwright script (PIL.Image), uploaded via /api/upload then optimized.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter110_swap_simulator.py is self-contained — it loads REACT_APP_BACKEND_URL from /app/frontend/.env. CostSwapSimulator filters search to material='PLA' by design. The Stripe checkout route is GONE — any future test referencing /api/marketplace/{job}/checkout will 404 (this is intentional, not a regression). Braintree client-token is a POST (not GET) at /api/marketplace/client-token. To reach the studio in fresh sessions, click 'OPEN THE STUDIO' on the landing page first (selector: get_by_text('OPEN THE STUDIO')).",
+  "rca of the issue": "N/A — no defects found in iter-110."
+}

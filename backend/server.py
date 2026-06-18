@@ -39,8 +39,7 @@ from jobs_history import (
     persist_job,
 )
 from marketplace import build_marketplace_router
-from marketplace_checkout import build_checkout_router, resolve_download_token
-from marketplace_braintree import build_braintree_router
+from marketplace_braintree import build_braintree_router, resolve_download_token
 from admin import build_admin_router, build_require_admin
 from sso_bridge import build_sso_bridge_router
 from meshy import build_meshy_router
@@ -769,7 +768,6 @@ app.include_router(api_router)
 presets_router = build_presets_router(db, require_user_dep)
 jobs_router = build_jobs_router(db, require_user_dep, JOBS)
 marketplace_router = build_marketplace_router(db, require_user_dep, get_current_user_dep)
-checkout_router = build_checkout_router(db)
 braintree_router = build_braintree_router(db)
 admin_router = build_admin_router(db, require_user_dep)
 sso_bridge_router = build_sso_bridge_router(db, get_current_user_dep)
@@ -783,7 +781,6 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(presets_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")
 app.include_router(marketplace_router, prefix="/api")
-app.include_router(checkout_router, prefix="/api")
 app.include_router(braintree_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 app.include_router(sso_bridge_router, prefix="/api")

@@ -86,3 +86,41 @@ def test_to_dict_serialises():
     assert isinstance(d["per_filament"], list)
     assert d["per_filament"][0]["name"]
     assert d["per_filament"][0]["weight_g"] >= 0
+
+
+def test_price_per_kg_brand_tier():
+    """Premium brands cost more than budget brands for the same material."""
+    from cost_estimator import price_per_kg_usd
+    bambu = price_per_kg_usd("PLA", "Bambu Lab", "gloss")
+    polymaker = price_per_kg_usd("PLA", "Polymaker", "silk")
+    budget = price_per_kg_usd("PLA", "Generic", "gloss")
+    assert polymaker > bambu > budget
+    # PETG > PLA at same brand tier.
+    assert price_per_kg_usd("PETG", "Bambu Lab", "gloss") > bambu
+
+
+def test_estimate_uses_explicit_price_when_present():
+    """If filament has price_per_kg_usd attribute, estimator must honour it
+    over the material/brand defaults (powers the swap simulator)."""
+    from types import SimpleNamespace
+    cheap = [
+        SimpleNamespace(name="Cheap White", hex="#FFFFFF", td=2.0,
+                        material="PLA", price_per_kg_usd=10.0),
+        SimpleNamespace(name="Cheap Black", hex="#000000", td=0.7,
+                        material="PLA", price_per_kg_usd=10.0),
+    ]
+    pricey = [
+        SimpleNamespace(name="Premium White", hex="#FFFFFF", td=2.0,
+                        material="PLA", price_per_kg_usd=80.0),
+        SimpleNamespace(name="Premium Black", hex="#000000", td=0.7,
+                        material="PLA", price_per_kg_usd=80.0),
+    ]
+    common = dict(
+        layer_map=np.full((20, 20), 4, dtype=np.int32),
+        layer_height_mm=0.12, swap_layer_indices=[2],
+        usable_width_mm=80.0, usable_height_mm=80.0,
+    )
+    out_cheap = estimate_print_costs(filaments=cheap, **common)
+    out_pricey = estimate_print_costs(filaments=pricey, **common)
+    # Pricey filaments cost ~8× more for the same volume.
+    assert out_pricey.total_cost_usd > 6 * out_cheap.total_cost_usd

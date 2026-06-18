@@ -46,6 +46,8 @@ class CatalogFilament:
     material: str     # "PLA" | "PETG"
 
     def as_dict(self) -> dict:
+        # Local import keeps manufacturer_library.py import-cycle-free.
+        from cost_estimator import price_per_kg_usd
         return {
             "id": self.id,
             "brand": self.brand,
@@ -54,6 +56,9 @@ class CatalogFilament:
             "td": round(self.td, 2),
             "finish": self.finish,
             "material": self.material,
+            "price_per_kg_usd": price_per_kg_usd(
+                self.material, self.brand, self.finish,
+            ),
         }
 
 
