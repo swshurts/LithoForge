@@ -216,4 +216,106 @@ def build_admin_router(
         )
         return [AuditEntry(**doc) async for doc in cur]
 
+    # ---- Marketplace moderation -----------------------------------------
+
+    @router.get("/marketplace/listings")
+    async def list_all_listings(
+        limit: int = Query(200, ge=1, le=500),
+        skip: int = Query(0, ge=0),
+        _=Depends(require_admin),
+    ) -> List[Dict[str, Any]]:
+        """Every currently-listed job in the marketplace, regardless of
+        owner. Returns the listing payload + minimal creator info so
+        the admin can spot test listings to purge."""
+        cur = (
+            db.jobs.find(
+                {"listing.visibility": "listed"},
+                {
+                    "_id": 0,
+                    "job_id": 1,
+                    "user_id": 1,
+                    "listing": 1,
+                    "created_at": 1,
+                },
+            )
+            .sort("listing.listed_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+        jobs = await cur.to_list(limit)
+        if not jobs:
+            return []
+        user_ids = list({j["user_id"] for j in jobs})
+        user_docs = await db.users.find(
+            {"user_id": {"$in": user_ids}},
+            {"_id": 0, "user_id": 1, "email": 1, "name": 1, "is_admin": 1, "is_super_admin": 1},
+        ).to_list(len(user_ids))
+        user_map = {u["user_id"]: u for u in user_docs}
+        results = []
+        for j in jobs:
+            listing = j.get("listing") or {}
+            listed_at = listing.get("listed_at")
+            if hasattr(listed_at, "isoformat"):
+                listed_at = listed_at.isoformat()
+            creator = user_map.get(j["user_id"], {})
+            results.append({
+                "job_id": j["job_id"],
+                "user_id": j["user_id"],
+                "creator_email": creator.get("email", "(unknown)"),
+                "creator_name": creator.get("name", ""),
+                "creator_is_admin": bool(creator.get("is_admin") or creator.get("is_super_admin")),
+                "title": listing.get("title", ""),
+                "description": listing.get("description", ""),
+                "price_usd": float(listing.get("price_usd", 0)),
+                "license": listing.get("license", ""),
+                "listed_at": listed_at,
+            })
+        return results
+
+    @router.post("/marketplace/{job_id}/unlist")
+    async def unlist_one(job_id: str, actor=Depends(require_admin)):
+        result = await db.jobs.update_one(
+            {"job_id": job_id, "listing.visibility": "listed"},
+            {"$unset": {"listing": ""}},
+        )
+        if result.matched_count == 0:
+            raise HTTPException(404, "Listing not found")
+        await _audit(actor, "unlist_marketplace_job", None, {"job_id": job_id})
+        return {"ok": True, "job_id": job_id, "unlisted": result.modified_count}
+
+    class BulkUnlistIn(BaseModel):
+        job_ids: Optional[List[str]] = None
+        all: bool = False
+        # Required when `all=True` to prevent accidents. Must equal the
+        # literal string 'UNLIST ALL'.
+        confirm: Optional[str] = None
+
+    @router.post("/marketplace/bulk-unlist")
+    async def bulk_unlist(body: BulkUnlistIn, actor=Depends(require_admin)):
+        if body.all:
+            if body.confirm != "UNLIST ALL":
+                raise HTTPException(
+                    400,
+                    "To unlist ALL listings include confirm='UNLIST ALL' in the body",
+                )
+            result = await db.jobs.update_many(
+                {"listing.visibility": "listed"},
+                {"$unset": {"listing": ""}},
+            )
+            count = result.modified_count
+            await _audit(actor, "bulk_unlist_all", None, {"count": count})
+            return {"ok": True, "unlisted": count}
+        if not body.job_ids:
+            raise HTTPException(400, "Provide job_ids or all=True")
+        result = await db.jobs.update_many(
+            {"job_id": {"$in": body.job_ids}, "listing.visibility": "listed"},
+            {"$unset": {"listing": ""}},
+        )
+        count = result.modified_count
+        await _audit(
+            actor, "bulk_unlist", None,
+            {"requested": len(body.job_ids), "unlisted": count},
+        )
+        return {"ok": True, "unlisted": count, "requested": len(body.job_ids)}
+
     return router
