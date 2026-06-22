@@ -762,6 +762,35 @@ async def get_status_checks() -> List[Dict[str, Any]]:
     return status_checks
 
 
+# --- Email capture (launch + pricing waitlists) ---------------------------
+
+class EmailSignupIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    email: str
+    source: str = "launch"   # launch | pricing-hobbyist | pricing-pro | ...
+
+
+@api_router.post("/email/notify")
+async def email_signup(body: EmailSignupIn) -> Dict[str, Any]:
+    """Capture an email + source tag for product launch / pricing
+    waitlists. Idempotent on (email, source) so re-submitting just
+    bumps `updated_at`."""
+    email = (body.email or "").strip().lower()
+    if not email or "@" not in email or "." not in email.split("@", 1)[1]:
+        raise HTTPException(400, "Invalid email")
+    source = (body.source or "launch").strip().lower()[:64]
+    now = datetime.now(timezone.utc)
+    await db.email_signups.update_one(
+        {"email": email, "source": source},
+        {
+            "$set": {"email": email, "source": source, "updated_at": now.isoformat()},
+            "$setOnInsert": {"created_at": now.isoformat()},
+        },
+        upsert=True,
+    )
+    return {"ok": True, "email": email, "source": source}
+
+
 app.include_router(api_router)
 
 # Mount the auth + per-user routers (built earlier so optimize endpoint

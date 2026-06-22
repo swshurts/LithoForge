@@ -56,6 +56,14 @@ class UserPatch(BaseModel):
     ai_quota_override: Optional[int] = None
 
 
+class BulkUnlistIn(BaseModel):
+    job_ids: Optional[List[str]] = None
+    all: bool = False
+    # Required when `all=True` to prevent accidents. Must equal the
+    # literal string 'UNLIST ALL'.
+    confirm: Optional[str] = None
+
+
 def build_require_admin(require_user_dep):
     """Factory returning a FastAPI dependency that allows only admins
     or super-admins. Reused by every admin-protected router."""
@@ -282,13 +290,6 @@ def build_admin_router(
             raise HTTPException(404, "Listing not found")
         await _audit(actor, "unlist_marketplace_job", None, {"job_id": job_id})
         return {"ok": True, "job_id": job_id, "unlisted": result.modified_count}
-
-    class BulkUnlistIn(BaseModel):
-        job_ids: Optional[List[str]] = None
-        all: bool = False
-        # Required when `all=True` to prevent accidents. Must equal the
-        # literal string 'UNLIST ALL'.
-        confirm: Optional[str] = None
 
     @router.post("/marketplace/bulk-unlist")
     async def bulk_unlist(body: BulkUnlistIn, actor=Depends(require_admin)):

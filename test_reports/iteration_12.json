@@ -1,0 +1,62 @@
+{
+  "summary": "Iter-112 testing complete. Backend: 210/210 pytest PASS (17 new in test_iter112_launch_and_admin_marketplace.py covering /api/email/notify validation + idempotency, admin marketplace listings/unlist/bulk-unlist, auth gating, all=true confirm enforcement). Frontend: /launch + /admin Marketplace tab fully verified end-to-end. ONE critical backend bug FOUND AND FIXED by testing agent: POST /api/admin/marketplace/bulk-unlist was returning 422 for every call because the BulkUnlistIn Pydantic model was defined inside build_admin_router() with `from __future__ import annotations` active — FastAPI's get_type_hints() could not resolve the locally-scoped class, so it fell back to treating `body` as a query parameter. Moved BulkUnlistIn to module scope; endpoint now works for both job_ids and all=true+confirm modes.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_scenarios": [
+    "BACKEND /api/email/notify — valid signup returns 200 {ok:true, email, source}; verified persisted in db.email_signups.",
+    "BACKEND /api/email/notify — idempotent: submitting same (email, source) 3x leaves exactly 1 doc.",
+    "BACKEND /api/email/notify — different sources for same email create separate docs.",
+    "BACKEND /api/email/notify — invalid emails (empty / no @ / no TLD) all return 400 with detail 'Invalid email'.",
+    "BACKEND /api/admin/marketplace/listings — anonymous returns 401; non-admin (free user with valid session) returns 403; admin returns full list with required fields {job_id, user_id, creator_email, creator_name, creator_is_admin, title, price_usd, listed_at}.",
+    "BACKEND /api/admin/marketplace/{job_id}/unlist — unlists, listing.visibility no longer matches; double-unlist + unknown id both return 404.",
+    "BACKEND /api/admin/marketplace/bulk-unlist — {job_ids:[a,b]} unlists both, returns {ok:true, unlisted:2, requested:2}; {all:true} without confirm returns 400; {all:true, confirm:'unlist all'} (wrong case) returns 400; {all:true, confirm:'UNLIST ALL'} unlists everything; empty body returns 400.",
+    "BACKEND full pytest: 210 passed in 31.14s (target was ≥193).",
+    "FRONTEND /launch — data-testid='launch-page' renders without auth. Hero CTA (launch-cta-primary), 10-card feature grid (launch-feature-grid), pricing teaser (Free / Hobbyist / Pro), and email form (launch-email-form, launch-email-input, launch-email-submit) all visible.",
+    "FRONTEND /launch invalid email — toast error, form stays visible (success element NOT mounted).",
+    "FRONTEND /launch valid email — POST /api/email/notify succeeds, form replaced by launch-email-success, sonner toast 'You're on the list' appears.",
+    "FRONTEND /admin marketplace tab — admin-tab-marketplace sidebar entry visible for super-admin; clicking renders admin-marketplace-tab.",
+    "FRONTEND /admin marketplace tab — table rows for seeded listings render with admin-marketplace-row-{job_id}, admin-marketplace-select-{job_id}, admin-marketplace-unlist-{job_id}. Reload (admin-marketplace-refresh) re-fetches.",
+    "FRONTEND /admin marketplace tab — select-all toggles all rows; bulk bar (admin-marketplace-bulk-bar + admin-marketplace-unlist-selected) appears with ≥1 selected and hides otherwise.",
+    "FRONTEND /admin marketplace tab — Danger Zone: admin-marketplace-wipe-all disabled while input is empty AND while it is 'unlist all' (case-sensitive), enables only on exact 'UNLIST ALL'.",
+    "FRONTEND /admin marketplace tab — single-row X unlist hits POST /api/admin/marketplace/{id}/unlist, row disappears, toast 'Unlisted' fires.",
+    "FRONTEND /admin anonymous — 'ACCESS DENIED · You don't have admin permissions on this account.' panel renders, no admin UI exposed."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iter112_launch_and_admin_marketplace.py",
+    "/app/test_reports/pytest/iter112_results.xml"
+  ],
+  "action_items": [
+    "Verify the BulkUnlistIn relocation in admin.py (moved out of build_admin_router) is acceptable — this was needed because `from __future__ import annotations` + locally-scoped Pydantic models cause FastAPI to fail type resolution and treat the body as a query param (422).",
+    "Optional follow-up: audit other routers (e.g., presets.py, marketplace.py, sso_bridge.py) for inner-class Pydantic body models — they would have the same hidden bug whenever `from __future__ import annotations` is active."
+  ],
+  "critical_code_review_comments": [
+    "admin.py — BulkUnlistIn was previously defined inside build_admin_router() with `from __future__ import annotations` at the top of the module. FastAPI's get_type_hints() can only resolve module-level names → the parameter was silently demoted to a query param, returning 422 for every call. Moved to module scope. Lint: search for other inner-class BaseModels across the codebase as a regression sweep.",
+    "admin.py:bulk_unlist returns {ok, unlisted, requested} for the job_ids path but {ok, unlisted} (no requested) for the all=true path. Frontend's unlistSelected reads both unlisted+requested; the all-path response shape is fine for the wipe-all path which only displays unlisted. Minor consistency nit — consider always returning the requested field (e.g., for all=true return requested:'*').",
+    "admin.py:list_all_listings — pagination uses .skip(skip).limit(limit) directly, but `to_list(limit)` is called with the same limit. Works, but the conventional pattern is `cursor.to_list(length=None)` or to_list(limit) AFTER limit is enforced via .limit(). No functional bug.",
+    "admin.py:list_all_listings — `creator_is_admin` is computed from {is_admin OR is_super_admin}. The flag is shown as 'ADMIN' badge in the UI; consider differentiating SUPER-ADMIN vs ADMIN in the listings table for ops triage.",
+    "server.py:email_signup — email validation is hand-rolled (`'@' in email AND '.' in email.split('@',1)[1]`). It rejects empty/no-@/no-TLD as required, but accepts e.g. `a@b.c` and `..@..@a.b`. For a marketing capture it's adequate but consider pydantic EmailStr or email-validator for production hardening.",
+    "MarketplaceTab.jsx — uses window.confirm/window.alert for destructive ops; works but breaks the design language elsewhere (Radix dialogs). Nit.",
+    "MarketplaceTab.jsx — `r.price_usd.toFixed(2)` will throw if price_usd is missing/null. The backend coerces float(listing.get('price_usd', 0)) so we always send a number — but defensive Number(r.price_usd ?? 0).toFixed(2) is cheap insurance.",
+    "MarketplaceTab.jsx — Wipe-all input is uncontrolled-feeling: no character counter, no obvious visual cue when correct. Consider turning the input border green once UNLIST ALL is typed (currently only the button colour changes).",
+    "LaunchPage.jsx — `useState` initialiser captures TAGLINES[0] hard-coded; the TAGLINES array implies rotation but none is implemented. Either remove the array or wire a random/rotating tagline.",
+    "LaunchPage.jsx — public marketing page issues 2x 401s on initial load (likely the global user-fetch in App). Not a defect (the page renders correctly) but noisy in Sentry and the browser console for unauthenticated visitors. Consider skipping auth bootstrap on /launch."
+  ],
+  "updated_files": [
+    "/app/backend/admin.py (moved BulkUnlistIn from nested-in-build_admin_router to module scope — fixes bulk-unlist 422)",
+    "/app/backend/tests/test_iter112_launch_and_admin_marketplace.py (NEW — 17 tests)"
+  ],
+  "success_rate": {"backend": "100% (210/210 pytest, including 17 new iter-112 tests)", "frontend": "100% — /launch + /admin Marketplace tab + anon /admin all behave per spec"},
+  "test_credentials": "Used `test-user-pytest` super-admin via the existing conftest authed_client fixture (Bearer header). UI testing seeded an ad-hoc session_token cookie for the same user.",
+  "seed_data_creation": "Pytest: ephemeral TEST_iter112_ * listings inserted directly via Motor into db.jobs, cleaned per-test. UI: 2 seed listings (ui-test-listing-1/2) under db.jobs were created and removed post-run. Email signups under test_iter112_* prefix were also purged.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "REGRESSION RISK: The bulk-unlist 422 root cause (`from __future__ import annotations` + Pydantic BaseModel defined inside a router-builder function) can recur. When reviewing newly added endpoints, grep for `class .*BaseModel.*:` inside `def build_.*_router` blocks and ensure they live at module scope. Iter-112 admin.py now has BulkUnlistIn correctly at module level. Other routers should be audited similarly (presets.py, marketplace.py, sso_bridge.py, payouts).",
+  "rca of the issue": "Bug: POST /api/admin/marketplace/bulk-unlist always returned 422 ({type:'missing',loc:['query','body']}) for any JSON payload, even with valid Authorization. RCA: admin.py uses `from __future__ import annotations` which lazily-stringifies all type hints. FastAPI calls get_type_hints() to resolve annotations into actual types; it resolves names against the module's globals(), NOT the function's local scope. BulkUnlistIn was defined inside build_admin_router() as a local class, so get_type_hints() raised NameError silently, FastAPI fell back to treating `body: BulkUnlistIn` as an un-typed parameter and resolved it as a query field — hence 'loc=[query,body]'. Fix: moved class BulkUnlistIn to module scope (alongside UserPatch / AdminUser). Verified by re-running pytest (17/17 in iter-112 file PASS) and full suite (210/210 PASS)."
+}

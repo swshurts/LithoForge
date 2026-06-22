@@ -10,6 +10,7 @@ import { ListingDetailPage } from "@/components/marketplace/ListingDetailPage";
 import { PurchaseSuccessPage } from "@/components/marketplace/PurchaseSuccessPage";
 import { PayoutsPage } from "@/components/marketplace/PayoutsPage";
 import { PricingPage } from "@/components/PricingPage";
+import { LaunchPage } from "@/components/LaunchPage";
 import { AdminPage } from "@/components/admin/AdminPage";
 import SsoAccept from "@/components/SsoAccept";
 import VoiceCommand from "@/components/VoiceCommand";
@@ -48,6 +49,7 @@ root.render(
               <Route path="/creator/:userId" element={<CreatorPage />} />
               <Route path="/payouts" element={<PayoutsPage />} />
               <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/launch" element={<LaunchPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/auth/sso-accept" element={<SsoAccept />} />
             </Routes>

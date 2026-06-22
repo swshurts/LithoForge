@@ -16,7 +16,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
-import { Users, ClipboardList, ShieldCheck, Ban, Trash2, HandCoins } from "lucide-react";
+import { Users, ClipboardList, ShieldCheck, Ban, Trash2, HandCoins, Store } from "lucide-react";
 import { toast } from "sonner";
 
 import { API } from "../../lib/api";
@@ -25,6 +25,7 @@ import {
   adminListPayoutBatches,
   adminRunPayouts,
 } from "../../lib/api";
+import { MarketplaceTab } from "./MarketplaceTab";
 
 const adminApi = axios.create({
   baseURL: `${API}/admin`,
@@ -689,6 +690,13 @@ export const AdminPage = () => {
           label="Payouts"
           testid="admin-tab-payouts"
         />
+        <SidebarBtn
+          active={tab === "marketplace"}
+          onClick={() => setTab("marketplace")}
+          icon={Store}
+          label="Marketplace"
+          testid="admin-tab-marketplace"
+        />
         <a
           href="/"
           className="mt-auto px-4 py-3 font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500 hover:text-zinc-100 transition-colors border-t border-zinc-800"
@@ -700,6 +708,7 @@ export const AdminPage = () => {
         {tab === "users" && <UsersTab me={me} />}
         {tab === "audit" && <AuditTab />}
         {tab === "payouts" && <PayoutsTab />}
+        {tab === "marketplace" && <MarketplaceTab />}
       </main>
     </div>
   );
