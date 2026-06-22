@@ -1243,3 +1243,15 @@ Auto-generated code review (env `9903f5df`) flagged 100+ items. After auditing e
   - Updated `server.py` imports + dropped the obsolete `checkout_router` mount.
   - `STRIPE_API_KEY` env var left in `.env` (per environment rules — never delete existing keys).
 - 182/182 backend pytests passing (174 existing + 8 new iter-110 swap-simulator integration tests).
+
+## Implemented (2026-02-15 · iter-111)
+- [x] **Route to ForgeSlicer** (POST → `https://forgeslicer.com/api/litho/inbox`)
+  - New `/app/backend/forgeslicer_bridge.py` exposing `POST /api/forgeslicer/send/{job_id}` with body `{part, format, name?}`.
+  - Reads caller's `session_token` (cookie OR Bearer header) and forwards it to ForgeSlicer as `Authorization: Bearer <token>`.
+  - Multipart payload: `file`, `name`, `format` (stl|3mf), `source_shape`, `source_metadata` (JSON job context).
+  - `source_shape` resolved from geometry + part:
+    - lithophane: flat/curved/cylindrical→cylinder/disc; box+rect→flat; box+round→disc.
+    - lightbox_frame|back|diffuser: box+rect→lightbox_rect; box+round→lightbox_circle.
+  - Override URL via env `FORGESLICER_INBOX_URL` or super-admin hook `POST /api/forgeslicer/_dev/inbox-url`.
+  - Frontend: `<ForgeSlicerSendButton>` in StatsPanel Export section. Single button for non-box; dropdown picker for box (lithophane / frame / back / diffuser, with diffuser hidden when disabled). Toasts on success/error, includes "Open ForgeSlicer" action.
+  - Tests: 8 in `test_forgeslicer_bridge.py` + 3 integration in `test_forgeslicer_extra.py`. 190 backend pytests passing total.
