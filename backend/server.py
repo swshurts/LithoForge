@@ -42,6 +42,7 @@ from marketplace import build_marketplace_router
 from marketplace_braintree import build_braintree_router, resolve_download_token
 from admin import build_admin_router, build_require_admin
 from sso_bridge import build_sso_bridge_router
+from forgeslicer_bridge import build_forgeslicer_router
 from meshy import build_meshy_router
 from paypal_payouts import (
     build_admin_payouts_router,
@@ -772,6 +773,9 @@ braintree_router = build_braintree_router(db)
 admin_router = build_admin_router(db, require_user_dep)
 sso_bridge_router = build_sso_bridge_router(db, get_current_user_dep)
 meshy_router = build_meshy_router(require_user_dep)
+forgeslicer_router = build_forgeslicer_router(
+    JOBS, _build_export, _ensure_job_in_memory, require_user_dep,
+)
 payouts_router = build_payouts_router(db, require_user_dep)
 require_admin_dep = build_require_admin(require_user_dep)
 admin_payouts_router = build_admin_payouts_router(db, require_admin_dep)
@@ -785,6 +789,7 @@ app.include_router(braintree_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 app.include_router(sso_bridge_router, prefix="/api")
 app.include_router(meshy_router, prefix="/api")
+app.include_router(forgeslicer_router, prefix="/api")
 app.include_router(admin_payouts_router, prefix="/api")
 app.include_router(payouts_router, prefix="/api")
 app.include_router(paypal_webhook_router, prefix="/api")

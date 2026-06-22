@@ -5,6 +5,7 @@ import { JobHistory } from "./JobHistory";
 import { HelpHint } from "./HelpHint";
 import { LibraryMatchPanel } from "./LibraryMatchPanel";
 import { CostSwapSimulator } from "./CostSwapSimulator";
+import { ForgeSlicerSendButton } from "./ForgeSlicerSendButton";
 import { exportUrl } from "../lib/api";
 import { useQuota } from "../lib/quota";
 
@@ -548,6 +549,29 @@ export const StatsPanel = ({
             </>
           )}
         </div>
+        {result?.job_id && (
+          <div
+            className="pt-3 mt-3 border-t border-amber-400/20"
+            data-testid="forgeslicer-send-section"
+          >
+            <div className="text-[10px] uppercase tracking-[0.18em] text-amber-200/70 font-mono mb-2 flex items-center justify-between">
+              <span>Route to slicer</span>
+              <a
+                href="https://forgeslicer.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[9px] text-zinc-500 hover:text-amber-200 transition-colors normal-case tracking-normal"
+              >
+                forgeslicer.com ↗
+              </a>
+            </div>
+            <ForgeSlicerSendButton
+              result={result}
+              geometry={geometry}
+              boxDiffuser={boxDiffuser}
+            />
+          </div>
+        )}
         {!result && (
           <div className="font-mono text-[10px] text-zinc-600 text-center pt-1">
             Generate a lithophane first

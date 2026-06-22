@@ -1,0 +1,40 @@
+{
+  "summary": "Iter-111 ForgeSlicer bridge fully verified end-to-end. Backend pytest: 190/190 PASSED (8 ForgeSlicer tests in test_forgeslicer_bridge.py + 3 additional scenarios in new test_forgeslicer_extra.py: error-pass-through 413, unreachable→502, diffuser-disabled→400). Frontend: ForgeSlicer 'Route to slicer' section + Send button + dropdown variants confirmed for flat (single btn) and box geometry (4-item dropdown with diffuser toggling visibility).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_scenarios": [
+    "BACKEND test_forgeslicer_bridge.py — 8/8 PASS: source_shape resolution (lithophane: flat→flat, curved→curved, cylindrical→cylinder, disc→disc, box+rect→flat, box+round→disc; lightbox parts: rect→lightbox_rect, round→lightbox_circle); unknown part→HTTPException; _get_session_token cookie>bearer precedence; auth gate (no token→401); unknown job→404; round-trip multipart (Authorization Bearer forwarded == authed user's session_token, body contains file/name/format/source_shape/source_metadata fields with model/3mf bytes >300B); box lightbox parts incl. diffuser-disabled→400.",
+    "BACKEND test_forgeslicer_extra.py — 3/3 PASS: (1) test_forgeslicer_error_pass_through pointed inbox at a 413 mock → bridge surfaces upstream 413 with detail.status=413 and detail.forgeslicer_response.detail='file too big'; (2) test_forgeslicer_unreachable_returns_502 pointed inbox at unreachable port → bridge returns 502; (3) test_diffuser_disabled_returns_400 with box_diffuser=False & part=lightbox_diffuser → 400 with detail mentioning 'diffuser'.",
+    "BACKEND full pytest: 190 passed in 25.20s (no warnings affecting outcome).",
+    "FRONTEND flat lithophane: forgeslicer-send-section appears after Generate, contains 'Route to slicer' subheader + forgeslicer.com link (target=_blank rel='noopener noreferrer') + single send-to-forgeslicer-btn. Clicking the button (guest) fires POST /api/forgeslicer/send/{job_id} → 401 → toast 'ForgeSlicer send failed' with description 'Not authenticated'.",
+    "FRONTEND box geometry with FROSTED DIFFUSER=ON: send-to-forgeslicer-btn opens forgeslicer-parts-menu with ALL 4 entries — forgeslicer-part-lithophane, forgeslicer-part-lightbox_frame, forgeslicer-part-lightbox_back, forgeslicer-part-lightbox_diffuser.",
+    "FRONTEND box geometry with FROSTED DIFFUSER=OFF: forgeslicer-parts-menu shows 3 entries (lithophane, lightbox_frame, lightbox_back). forgeslicer-part-lightbox_diffuser is NOT in DOM — gating confirmed.",
+    "FRONTEND error path: clicking a part item without auth surfaces 'ForgeSlicer send failed' / 'Not authenticated' toast (matches spec)."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_forgeslicer_bridge.py",
+    "/app/backend/tests/test_forgeslicer_extra.py (NEW)",
+    "/app/test_reports/pytest/iter111_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "forgeslicer_bridge.py:212 — when httpx raises (network/timeout) the 502 detail is a string ('ForgeSlicer unreachable: ...'). When ForgeSlicer responds with 4xx/5xx the bridge re-raises with detail as a dict ({error, status, forgeslicer_response}). Two different detail shapes for two different upstream-failure modes — the frontend toast already normalizes them, but consider unifying both error responses to the dict shape ({error:'forgeslicer_unreachable'|'forgeslicer_rejected', forgeslicer_response?, message}) so API consumers can branch deterministically without string-matching.",
+    "forgeslicer_bridge.py:42-51, 250-251 — module-level _INBOX_OVERRIDE is mutable global state. Works for tests but every worker in a multi-process deployment will have its own override, and concurrent admin calls race. Document this limitation OR move the override into Mongo/Redis keyed by 'forgeslicer_inbox_url' so it survives worker restarts AND is shared cluster-wide.",
+    "forgeslicer_bridge.py:239-241 — _InboxOverride is defined inside build_forgeslicer_router() but never used (the active body model is module-level InboxOverrideIn at line 81). Dead inner class — delete to avoid confusion.",
+    "forgeslicer_bridge.py:242-252 — /_dev/inbox-url route is mounted unconditionally (no DEV_MODE / staging guard). The route IS admin-gated (is_super_admin or is_admin), but the docstring/spec in tests claims 'only active when DEV_MODE=1'. Either (a) remove that promise from the test docstring, OR (b) actually wrap the route registration in `if os.environ.get('DEV_MODE') == '1':`. Mismatched threat model could bite during a prod audit.",
+    "ForgeSlicerSendButton.jsx:47 — window.open('https://forgeslicer.com/inbox', '_blank', 'noopener') — missing 'noreferrer' in features list (only 'noopener'). Headers a tab-nabbing concern. The section's <a> tag DOES have rel='noopener noreferrer'. Consider tightening this too: window.open(url, '_blank', 'noopener,noreferrer').",
+    "ForgeSlicerSendButton.jsx:85 — boxDiffuser ?? true defaults to TRUE when the prop is undefined. This means any box job rendered with a missing boxDiffuser prop will (incorrectly) show the diffuser entry. Confirmed StatsPanel passes the value through, but the default-true fallback could mask bugs from upstream prop changes. Recommend defaulting to false (fail-closed) instead.",
+    "ForgeSlicerSendButton.jsx — dropdown menu has no outside-click / Escape handler. Once open it only closes after a part is clicked or the main button is re-clicked. Minor UX nit — add a focus-out listener or use a Radix DropdownMenu to inherit a11y for free.",
+    "forgeslicer_bridge.py — when the user is signed in via cookie, the cookie value IS the session_token (good). When signed in via Bearer header, we forward exactly that token to ForgeSlicer. The same token authenticates both apps to Emergent — fine — but consider whether ForgeSlicer SHOULD accept a sibling app's token verbatim, vs. minting a short-lived hand-off token here. Cross-tenant bleed risk if the trust boundary changes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_forgeslicer_extra.py (NEW — 3 additional scenarios)"
+  ],
+  "success_rate": {"backend": "100% (190/190 pytest, including 8 ForgeSlicer bridge tests + 3 new extra-scenarios)", "frontend": "100% — all iter-111 UI requirements (flat single button, box 4-item dropdown, diffuser=false drops 4th entry, error toast, target=_blank link) verified."},
+  "test_credentials": "Not required for the iter-111 UI checks (guest-flow proves 401 + toast path). Backend auth-gated tests use the conftest.py 'test-user-pytest' fixture (tier=pro, is_super_admin=true).",
+  "seed_data_creation": "None persistent. Runtime: a 64x64 solid-colour PNG generated in the page context for upload+optimize. Localhost HTTPServer mocks spun up in fixtures for the inbox redirect (auto-tore-down).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_forgeslicer_extra.py uses the same `/api/forgeslicer/_dev/inbox-url` admin hook used by test_forgeslicer_bridge.py — each test resets the URL to null in its finally/teardown. If a future test points the inbox URL elsewhere and crashes before resetting, subsequent tests will route to the stale URL. Consider an autouse fixture in conftest.py that always resets _INBOX_OVERRIDE to None before each test. Also: ForgeSlicerSendButton renders only after result.job_id exists — the section is conditionally mounted; testing flows must Generate first. For Box-mode UI tests, change SHAPE select to 'Lightbox (rect / round)' then toggle the OFF→ON button next to 'FROSTED DIFFUSER' to flip box_diffuser=true.",
+  "rca of the issue": "N/A — no defects found. Iter-111 ForgeSlicer bridge is shipping-quality."
+}

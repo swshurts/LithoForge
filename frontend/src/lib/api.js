@@ -274,3 +274,14 @@ export const tokenExportUrl = (jobId, kind, token, printerId = null) => {
   if (printerId) params.set("printer", printerId);
   return `${API}/export/${jobId}/${kind}?${params.toString()}`;
 };
+
+// Send a generated part (lithophane / lightbox_frame / lightbox_back /
+// lightbox_diffuser) to ForgeSlicer's inbox. The backend forwards the
+// user's session_token as Bearer auth so the file lands in the same
+// Emergent identity's inbox.
+export const sendToForgeSlicer = async (jobId, { part = "lithophane", format = "3mf", name = null } = {}) => {
+  const body = { part, format };
+  if (name) body.name = name;
+  const { data } = await api.post(`/forgeslicer/send/${jobId}`, body);
+  return data;
+};
