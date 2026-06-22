@@ -1255,3 +1255,14 @@ Auto-generated code review (env `9903f5df`) flagged 100+ items. After auditing e
   - Override URL via env `FORGESLICER_INBOX_URL` or super-admin hook `POST /api/forgeslicer/_dev/inbox-url`.
   - Frontend: `<ForgeSlicerSendButton>` in StatsPanel Export section. Single button for non-box; dropdown picker for box (lithophane / frame / back / diffuser, with diffuser hidden when disabled). Toasts on success/error, includes "Open ForgeSlicer" action.
   - Tests: 8 in `test_forgeslicer_bridge.py` + 3 integration in `test_forgeslicer_extra.py`. 190 backend pytests passing total.
+
+## Implemented (2026-02-15 · iter-112)
+- [x] **Admin marketplace cleanup UI** — new `/admin` → Marketplace tab. Lists every active listing across all creators with checkbox selection. Single-row unlist, bulk unlist, plus a 'Danger Zone' wipe-all gated by typing the literal phrase `UNLIST ALL`. data-testids: `admin-tab-marketplace`, `admin-marketplace-tab`, `admin-marketplace-table`, `admin-marketplace-bulk-bar`, `admin-marketplace-unlist-selected`, `admin-marketplace-danger-zone`, `admin-marketplace-confirm-input`, `admin-marketplace-wipe-all`, plus per-row `admin-marketplace-row-{id}`, `admin-marketplace-select-{id}`, `admin-marketplace-unlist-{id}`.
+- [x] **/launch announcement page** — public marketing surface at `/launch`. Hero, 10-card feature grid, pricing teaser (Free/Hobbyist/Pro), email capture posting to a new `POST /api/email/notify` endpoint (idempotent on email+source). data-testids: `launch-page`, `launch-cta-primary`, `launch-feature-grid`, `launch-email-form`, `launch-email-input`, `launch-email-submit`, `launch-email-success`.
+- [x] **Backend additions**:
+  - `POST /api/email/notify` — captures email signups (`db.email_signups`, idempotent on (email, source)).
+  - `GET /api/admin/marketplace/listings` — admin-only paginated listings with creator info.
+  - `POST /api/admin/marketplace/{job_id}/unlist` — single-row unlist (admin-only, 404 if absent).
+  - `POST /api/admin/marketplace/bulk-unlist` — bulk by `job_ids` or `{all: true, confirm: 'UNLIST ALL'}` (admin-only).
+  - Bug fix during testing: `BulkUnlistIn` Pydantic model relocated to module scope (was inline in `build_admin_router` — `from __future__ import annotations` + locally-scoped Pydantic class breaks FastAPI's type resolution → body parsed as query param → 422).
+- 210/210 backend pytests passing (was 193 → +17 iter-112 tests).
